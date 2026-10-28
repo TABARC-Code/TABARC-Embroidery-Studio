@@ -348,6 +348,10 @@ class StudioWindow(QMainWindow):
         self.objects.clear()
         if self.editor:
             doc = self.editor.design
+            if self.active_id not in {obj.object_id for obj in doc.objects}:
+                # Undo/grouping can remove the selected object. The list and
+                # properties must never keep a dangling selection.
+                self.active_id = None
             width, height = doc.width_mm * PX, doc.height_mm * PX
             self.scene.setSceneRect(-20, -20, width + 40, height + 40)
             self.scene.addRect(0, 0, width, height, QPen(QColor('#4b5966'), 2),

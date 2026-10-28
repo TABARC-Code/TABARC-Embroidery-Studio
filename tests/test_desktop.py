@@ -132,6 +132,7 @@ def test_desktop_compound_fill_and_undo():
         assert window.editor.object(window.active_id).kind == 'tatami'
         assert len(window.editor.object(window.active_id).strokes) == 2
         window.undo()
+        assert window.active_id is None
         assert window.editor.object(outer) and window.editor.object(inner)
     finally:
         if window.editor:
