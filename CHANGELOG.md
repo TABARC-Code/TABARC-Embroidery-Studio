@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — Precision workspace
+
+- Added open-path drawing, a visible snap-grid control and absolute-anchor grid snapping.
+- Improved narrow-stroke selection and deferred scene replacement after a drag ends.
+- SVG paths now enter the desktop as separate running objects. A closed running path may be switched to tatami deliberately.
+- Preserved original artwork, undo/redo and schema-3 project files. Added geometry and drawing tests.
+- Still pre-alpha. Qt testing is in CI; supervised machine testing remains outstanding.
+
+
 ## v0.6.0 — 27 October 2026
 
 - Introduced multi-object `DesignDocument` and object-specific styles, threads and visibility.

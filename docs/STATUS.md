@@ -1,20 +1,11 @@
 # Status
 
-**v0.7.0, 27 October 2026 — multi-object document model and schema-3 projects implemented; pre-alpha.**
+**v0.8.0 — pre-alpha (28 October 2026).**
 
-106 automated tests passed, one optional-dependency module skipped because
-pyembroidery could not be installed here. A separate decoder supplied in the
-reconstruction evidence pack matched all 185 records in the generated multi-
-object DST example. Four original native `.ostch` files (63 objects) passed
-reference-only schema-3 save/open checks; vendor designs are excluded from
-this release archive.
+The optional PySide6 workbench supports opening editable designs, selecting and moving objects, thread colour and stitch settings, sewing order, undo/redo, open-polyline running-path drawing, configurable grid snapping, per-path SVG import and deliberate running/tatami conversion for closed contours. Source artwork remains in the `.tbes` archive without being silently rewritten.
 
-The new `compose` CLI supports individually configured running, satin, tatami,
-reference and control objects. Source cubic reference geometry and metadata
-are retained, with opt-in native Running approximation. STOP and TRIM remain
-explicit events and unsupported machine exports fail closed.
+The running, two-rail satin and tatami generators, multi-colour stitch composition and built-in DST exporter remain available without the desktop dependency. This is still experimental digitising software, not a verified production system.
 
-No GUI, physical sew-outs or completed machine-profile validation.
-See [object model](OBJECT-DOCUMENT.md) and [next sprint](NEXT-SPRINT.md).
+Local suite: 118 passed; two optional-dependency tests skipped (PySide6 and pyembroidery). The updated desktop smoke tests must be checked separately in GitHub Actions. No physical machine sew-out has been completed. No underlay, pull compensation or reliable tie-offs yet.
 
-Desktop workbench available as an optional PySide6 installation. Local Qt execution was unavailable during development; an offscreen CI smoke test has been added. Physical machine testing is still outstanding.
+See [desktop workflow](DESKTOP-WORKFLOW.md), [roadmap](ROADMAP.md) and [validation](VALIDATION.md).

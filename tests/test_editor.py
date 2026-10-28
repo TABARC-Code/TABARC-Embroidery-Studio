@@ -106,3 +106,89 @@ def test_new_import_is_unsaved_until_written():
     assert editor.dirty
     editor.mark_saved()
     assert not editor.dirty
+
+
+def test_grid_snap_is_absolute_and_has_predictable_midpoints():
+    from tabarc_embroidery.editor import snap_coordinate
+    assert snap_coordinate(1.25, 0.5) == 1.5
+    assert snap_coordinate(-1.25, 0.5) == -1.5
+    assert snap_coordinate(1.24, 0.5) == 1.0
+    assert snap_coordinate(2.75, 0.5) == 3.0
+    for grid in (0, -1, float('nan'), float('inf'), 0.01, 101):
+        with pytest.raises(ValueError):
+            snap_coordinate(2, grid)
+    with pytest.raises(ValueError):
+        snap_coordinate(float('nan'), 1.0)
+
+
+def test_snap_object_anchor_not_relative_delta():
+    editor = session()
+    obj = editor.object('red-line')
+    start = obj.strokes[0].points[0]
+    editor.move('red-line', 0.7, 1.3, grid_mm=1)
+    moved = editor.object('red-line').strokes[0].points[0]
+    from tabarc_embroidery.editor import snap_coordinate
+    assert moved == Point(snap_coordinate(start.x + .7, 1),
+                          snap_coordinate(start.y + 1.3, 1))
+    editor.move('red-line', .12, .12, grid_mm=1)
+    assert editor.object('red-line').strokes[0].points[0] == moved
+    assert editor.undo()
+    assert editor.object('red-line').strokes[0].points[0] == start
+    assert not editor.undo()
+
+
+def test_drawn_path_is_editable_and_saved_without_changing_source():
+    editor = session()
+    original_source = editor.source
+    ident = editor.add_running_path((Point(1, 2), Point(4, 6), Point(7, 9)),
+                                    name='Short run', thread_hex='#ab0099')
+    assert ident.startswith('drawn-')
+    assert editor.object(ident).thread_hex == '#AB0099'
+    plan = generate_design_plan(editor.design)
+    assert plan.events[-1].opcode == Op.END
+    restored, asset = load_project(save_project(editor.design, editor.source))
+    assert asset == original_source
+    assert restored.objects[-1].strokes[0].points == (Point(1, 2), Point(4, 6), Point(7, 9))
+    assert editor.dirty
+    editor.undo()
+    assert len(editor.design.objects) == len(restored.objects) - 1
+    editor.redo()
+    assert editor.object(ident).name == 'Short run'
+
+
+def test_drawing_rejects_bad_geometry_without_mutating_project():
+    editor = session()
+    before = editor.design
+    attempts = (
+        ((Point(1, 1),), {}),
+        ((Point(1, 1), Point(1, 1)), {}),
+        ((Point(1, 1), Point(2, 2)), {'thread_hex': 'red'}),
+        ((Point(1, 1), Point(2, 2)), {'name': ''}),
+        ((Point(-10001, 1), Point(2, 2)), {}),
+    )
+    for points, kwargs in attempts:
+        with pytest.raises(ValueError):
+            editor.add_running_path(points, **kwargs)
+        assert editor.design == before
+    assert not editor.can_undo
+
+
+def test_stitch_kind_change_requires_closed_paths():
+    from dataclasses import replace
+    from tabarc_embroidery.design import EmbroideryObject
+    editor = session()
+    initial = editor.design
+    with pytest.raises(ValueError, match='closed'):
+        editor.set_stitch_kind('red-line', 'tatami')
+    assert editor.design == initial
+    closed = EmbroideryObject('closed', 'Closed square', 'running',
+        (Stroke('sq', (Point(20, 20), Point(27, 20), Point(27, 27), Point(20, 27)), True),),
+        StitchSettings(style='running'))
+    editor._apply(replace(editor.design, objects=editor.design.objects + (closed,)))
+    editor.set_stitch_kind('closed', 'tatami')
+    assert editor.object('closed').settings.style == 'tatami'
+    assert any(e.opcode == Op.STITCH for e in generate_design_plan(editor.design).events)
+    editor.set_stitch_kind('closed', 'running')
+    assert editor.object('closed').settings.style == 'running'
+    with pytest.raises(ValueError):
+        editor.set_stitch_kind('closed', 'satin')

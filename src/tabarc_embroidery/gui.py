@@ -11,17 +11,18 @@ import os
 import tempfile
 
 from .design import DesignDocument, design_from_svg, generate_design_plan
-from .editor import EditorSession, as_design
+from .editor import EditorSession, as_design, snap_coordinate
 from .dst import export_dst, inspect_dst, read_dst_events
-from .model import Op, StitchSettings
+from .model import Op, Point, StitchSettings
 from .preflight import inspect_plan
 from .project import load_project, save_project
 
 # Imported only by the desktop entry point. Headless conversion has no Qt dependency.
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QPainter, QPainterPath, QPen, QBrush
+from PySide6.QtGui import (QAction, QColor, QPainter, QPainterPath,
+                           QPainterPathStroker, QPen, QBrush)
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QColorDialog, QDockWidget, QDoubleSpinBox,
+    QApplication, QCheckBox, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGraphicsPathItem, QGraphicsScene, QGraphicsView,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget,
@@ -42,11 +43,22 @@ class CanvasItem(QGraphicsPathItem):
                       QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable)
         self.setZValue(10)
 
+    def boundingRect(self):
+        return super().boundingRect().adjusted(-5, -5, 5, 5)
+
+    def shape(self):
+        # Hairline paths are miserable to select, particularly on a laptop.
+        stroker = QPainterPathStroker()
+        stroker.setWidth(10)
+        return stroker.createStroke(self.path()).united(self.path())
+
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         delta = self.pos()
         if abs(delta.x()) > 0.01 or abs(delta.y()) > 0.01:
-            self._on_move(self.object_id, delta.x() / PX, delta.y() / PX)
+            dx, dy, oid = delta.x() / PX, delta.y() / PX, self.object_id
+            # Do not destroy this graphics item from inside its own release event.
+            QTimer.singleShot(0, lambda: self._on_move(oid, dx, dy))
 
 
 class HoopView(QGraphicsView):
@@ -56,6 +68,23 @@ class HoopView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setBackgroundBrush(QColor('#dce2e7'))
+        self.draw_callback = None
+        self.hover_callback = None
+        self.setMouseTracking(True)
+
+    def mousePressEvent(self, event):
+        if self.draw_callback is not None and event.button() == Qt.MouseButton.LeftButton:
+            p = self.mapToScene(event.position().toPoint())
+            self.draw_callback(p.x() / PX, p.y() / PX)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.hover_callback is not None:
+            p = self.mapToScene(event.position().toPoint())
+            self.hover_callback(p.x() / PX, p.y() / PX)
+        super().mouseMoveEvent(event)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -76,6 +105,9 @@ class StudioWindow(QMainWindow):
         self._plan = None
         self._preview_position = 0
         self._scene_items: dict[str, CanvasItem] = {}
+        self._draw_points: list[Point] = []
+        self._draw_hover: Point | None = None
+        self._draw_preview = None
         self._timer = QTimer(self)
         self._timer.setInterval(80)
         self._timer.timeout.connect(self._advance)
@@ -121,8 +153,16 @@ class StudioWindow(QMainWindow):
         self.visible_box = QCheckBox('Sew this object')
         self.visible_box.toggled.connect(self._change_visibility)
         self.kind_label = QLabel('—')
+        self.kind_combo = QComboBox()
+        self.kind_combo.addItems(['running', 'tatami'])
+        self.kind_combo.currentTextChanged.connect(self._change_kind)
+        self.grid_combo = QComboBox()
+        self.grid_combo.addItems(['Off', '0.5 mm', '1 mm', '2 mm', '5 mm'])
+        self.grid_combo.setCurrentText('1 mm')
         form.addRow('Name', self.name_edit)
         form.addRow('Stitch type', self.kind_label)
+        form.addRow('Change stitch type', self.kind_combo)
+        form.addRow('Snap to grid', self.grid_combo)
         form.addRow('Thread', self.colour_button)
         form.addRow('', self.visible_box)
         self.fields = {}
@@ -181,12 +221,19 @@ class StudioWindow(QMainWindow):
         edit = self.menuBar().addMenu('&Edit')
         self._action(edit, 'Undo', self.undo, 'Ctrl+Z')
         self._action(edit, 'Redo', self.redo, 'Ctrl+Shift+Z')
+        edit.addSeparator()
+        self.draw_action = self._action(edit, 'Draw running path',
+                                        self._set_draw_mode, 'D')
+        self.draw_action.setCheckable(True)
+        self._action(edit, 'Finish path', self.finish_path, 'Return')
+        self._action(edit, 'Cancel path', self.cancel_path, 'Escape')
+        self._action(edit, 'Remove last point', self.remove_draw_point, 'Backspace')
         view = self.menuBar().addMenu('&View')
         self._action(view, 'Fit hoop', self._fit, 'Ctrl+0')
         self._action(view, 'Generate stitch preview', self.generate_preview, 'F5')
 
     def _confirm_discard(self) -> bool:
-        if self.editor and self.editor.dirty:
+        if (self.editor and self.editor.dirty) or self._draw_points:
             answer = QMessageBox.question(self, 'Unsaved changes',
                        'Discard the current unsaved changes?',
                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -214,8 +261,12 @@ class StudioWindow(QMainWindow):
             elif path.suffix.lower() == '.svg':
                 from .svg_import import import_svg
                 imported = import_svg(data)
-                assignments = {'objects': [{'id': 'artwork', 'name': path.stem,
-                    'kind': 'running', 'stroke_indices': list(range(len(imported.strokes)))}]}
+                # Separate paths are individually selectable. Closed shapes stay
+                # running until deliberately given a fill stitch type.
+                assignments = {'objects': [
+                    {'id': f'path-{i+1}', 'name': f'{path.stem} {i+1}',
+                     'kind': 'running', 'stroke_indices': [i]}
+                    for i in range(len(imported.strokes))]}
                 doc, source = design_from_svg(data, assignments), data
                 project_path = None
             else:
@@ -227,6 +278,8 @@ class StudioWindow(QMainWindow):
             QMessageBox.critical(self, 'Cannot open design', str(exc))
             return False
         self.editor, self.project_path = new_editor, project_path
+        self._draw_points.clear()
+        self._draw_hover = None
         self.active_id = None
         self._refresh_scene(fit=True)
         self.statusBar().showMessage(f'Opened {path.name}')
@@ -244,6 +297,7 @@ class StudioWindow(QMainWindow):
         self.position_label.setText('No stitch plan')
         self._refreshing = True
         self.scene.clear()
+        self._draw_preview = None
         self._scene_items = {}
         self.objects.clear()
         if self.editor:
@@ -290,8 +344,12 @@ class StudioWindow(QMainWindow):
                     self.scene.addItem(item)
                     self._scene_items[obj.object_id] = item
             self._select(self.active_id)
+            self._redraw_path_preview()
             if fit:
                 self._fit()
+            if hasattr(self, 'draw_action') and self.draw_action.isChecked():
+                for item in self._scene_items.values():
+                    item.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable, False)
         self._refreshing = False
         self._refresh_properties()
         self._update_title()
@@ -303,6 +361,9 @@ class StudioWindow(QMainWindow):
             if item.data(Qt.ItemDataRole.UserRole) == object_id:
                 self.objects.setCurrentRow(i)
                 break
+        if object_id is None:
+            self.objects.clearSelection()
+            self.objects.setCurrentRow(-1)
         for oid, graphics in self._scene_items.items():
             graphics.setSelected(oid == object_id)
 
@@ -320,17 +381,19 @@ class StudioWindow(QMainWindow):
         if self._refreshing:
             return
         selected = [item for item in self.scene.selectedItems() if isinstance(item, CanvasItem)]
-        if selected:
-            self._refreshing = True
-            self._select(selected[-1].object_id)
-            self._refreshing = False
-            self._refresh_properties()
+        self._refreshing = True
+        self._select(selected[-1].object_id if selected else None)
+        self._refreshing = False
+        self._refresh_properties()
 
     def _refresh_properties(self):
         self._refreshing = True
         obj = self.editor.object(self.active_id) if self.editor and self.active_id else None
         self.name_edit.setText(obj.name if obj else '')
         self.kind_label.setText(obj.kind if obj else '—')
+        self.kind_combo.setEnabled(bool(obj and obj.kind in {'running', 'tatami'}))
+        if obj and obj.kind in {'running', 'tatami'}:
+            self.kind_combo.setCurrentText(obj.kind)
         self.visible_box.setChecked(obj.visible if obj else False)
         self.colour_button.setText(obj.thread_hex if obj else 'Choose thread colour')
         if obj:
@@ -354,6 +417,107 @@ class StudioWindow(QMainWindow):
             except ValueError as exc:
                 QMessageBox.warning(self, 'Invalid setting', str(exc))
                 self._refresh_properties()
+
+    def _change_kind(self, kind):
+        if self._refreshing or not self.editor or not self.active_id:
+            return
+        try:
+            self.editor.set_stitch_kind(self.active_id, kind)
+            self._refresh_scene()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Cannot change stitch type', str(exc))
+            self._refresh_properties()
+
+    def _grid(self):
+        label = self.grid_combo.currentText()
+        return None if label == 'Off' else float(label.split()[0])
+
+    def _set_draw_mode(self, checked):
+        self.view.draw_callback = self._draw_click if checked else None
+        self.view.hover_callback = self._draw_hover_at if checked else None
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag if checked else
+                              QGraphicsView.DragMode.RubberBandDrag)
+        for item in self._scene_items.values():
+            item.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable, not checked)
+        if not checked:
+            self.cancel_path()
+        self.statusBar().showMessage('Click to add points; Enter finishes, Esc cancels'
+                                     if checked else 'Selection mode')
+
+    def _draw_click(self, x_mm, y_mm):
+        if not self.editor:
+            self.statusBar().showMessage('Open a project or SVG before drawing')
+            return
+        spacing = self._grid()
+        if spacing is not None:
+            x_mm = snap_coordinate(x_mm, spacing)
+            y_mm = snap_coordinate(y_mm, spacing)
+        if not 0 <= x_mm <= self.editor.design.width_mm or not 0 <= y_mm <= self.editor.design.height_mm:
+            self.statusBar().showMessage('Point is outside the hoop')
+            return
+        point = Point(x_mm, y_mm)
+        if self._draw_points and point == self._draw_points[-1]:
+            return
+        if len(self._draw_points) >= 5000:
+            self.statusBar().showMessage('Path point limit reached')
+            return
+        self._draw_points.append(point)
+        self._redraw_path_preview()
+        self.statusBar().showMessage(f'{len(self._draw_points)} points · Enter to finish')
+
+    def _draw_hover_at(self, x_mm, y_mm):
+        if not self._draw_points:
+            return
+        spacing = self._grid()
+        if spacing is not None:
+            x_mm = snap_coordinate(x_mm, spacing)
+            y_mm = snap_coordinate(y_mm, spacing)
+        point = Point(x_mm, y_mm)
+        if point != self._draw_hover:
+            self._draw_hover = point
+            self._redraw_path_preview()
+
+    def _redraw_path_preview(self):
+        if self._draw_preview is not None:
+            self.scene.removeItem(self._draw_preview)
+            self._draw_preview = None
+        if not self._draw_points:
+            return
+        path = QPainterPath()
+        path.moveTo(self._draw_points[0].x * PX, self._draw_points[0].y * PX)
+        for point in self._draw_points[1:]:
+            path.lineTo(point.x * PX, point.y * PX)
+        if self._draw_hover is not None:
+            path.lineTo(self._draw_hover.x * PX, self._draw_hover.y * PX)
+        pen = QPen(QColor('#2563a8'), 2, Qt.PenStyle.DashLine)
+        self._draw_preview = self.scene.addPath(path, pen)
+        self._draw_preview.setZValue(30)
+
+    def finish_path(self):
+        if not self.editor or not self._draw_points:
+            return False
+        try:
+            ident = self.editor.add_running_path(self._draw_points)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Cannot finish path', str(exc))
+            return False
+        self._draw_points.clear()
+        self._draw_hover = None
+        self.active_id = ident
+        self._refresh_scene()
+        self.statusBar().showMessage(f'Added {ident}; save the project to keep it')
+        return True
+
+    def cancel_path(self):
+        self._draw_points.clear()
+        self._draw_hover = None
+        self._redraw_path_preview()
+
+    def remove_draw_point(self):
+        if self._draw_points:
+            self._draw_points.pop()
+            self._draw_hover = None
+            self._redraw_path_preview()
 
     def _change_name(self):
         self._change(name=self.name_edit.text())
@@ -384,7 +548,7 @@ class StudioWindow(QMainWindow):
         if not self.editor:
             return
         try:
-            self.editor.move(object_id, dx, dy)
+            self.editor.move(object_id, dx, dy, grid_mm=self._grid())
             self.active_id = object_id
             self._refresh_scene()
         except ValueError as exc:
@@ -401,6 +565,9 @@ class StudioWindow(QMainWindow):
             self._refresh_scene()
 
     def undo(self):
+        if self._draw_points:
+            self.remove_draw_point()
+            return
         if self.editor and self.editor.undo():
             self._refresh_scene()
 
@@ -411,7 +578,7 @@ class StudioWindow(QMainWindow):
     def _update_title(self):
         name = self.project_path.name if self.project_path else 'Untitled'
         marker = ' *' if self.editor and self.editor.dirty else ''
-        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.7.0')
+        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.8.0')
 
     def save(self):
         if not self.editor:

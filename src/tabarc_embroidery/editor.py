@@ -7,13 +7,26 @@ now; large documents will want a command log rather than whole snapshots.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import isfinite
+from math import copysign, floor, isfinite
+from typing import Sequence
 
 from .design import (CubicSegment, CurvePath, DesignDocument, EmbroideryObject,
                      validate_thread)
 from .model import Document, Point, StitchSettings, Stroke
 
 MAX_UNDO = 60
+MAX_DRAW_POINTS = 5000
+
+
+def snap_coordinate(value_mm: float, grid_mm: float) -> float:
+    """Round to the nearest mm grid, including halfway values away from zero."""
+    if not isfinite(value_mm) or abs(value_mm) > 100000:
+        raise ValueError("Snap position is outside supported coordinates")
+    if not isfinite(grid_mm) or not 0.1 <= grid_mm <= 100:
+        raise ValueError("Grid spacing must be between 0.1 and 100 mm")
+    steps = floor(abs(value_mm) / grid_mm + 0.5)
+    return round(copysign(steps * grid_mm, value_mm), 8)
+
 
 
 def as_design(document: Document | DesignDocument) -> DesignDocument:
@@ -129,8 +142,60 @@ class EditorSession:
                           settings=original.settings if settings is None else settings)
         self._replace(object_id, updated)
 
-    def move(self, object_id: str, dx_mm: float, dy_mm: float) -> None:
-        self._replace(object_id, translate_object(self.object(object_id), dx_mm, dy_mm))
+    def move(self, object_id: str, dx_mm: float, dy_mm: float,
+             *, grid_mm: float | None = None) -> None:
+        obj = self.object(object_id)
+        if not all(isfinite(v) and abs(v) <= 10000 for v in (dx_mm, dy_mm)):
+            raise ValueError('Movement must be finite and within 10,000 mm')
+        if grid_mm is not None:
+            if obj.strokes and obj.strokes[0].points:
+                anchor = obj.strokes[0].points[0]
+            elif obj.curve_paths and obj.curve_paths[0].segments:
+                anchor = obj.curve_paths[0].segments[0].p0
+            else:
+                raise ValueError('Cannot snap an object without geometry')
+            dx_mm = snap_coordinate(anchor.x + dx_mm, grid_mm) - anchor.x
+            dy_mm = snap_coordinate(anchor.y + dy_mm, grid_mm) - anchor.y
+        self._replace(object_id, translate_object(obj, dx_mm, dy_mm))
+
+    def add_running_path(self, points: Sequence[Point], *, name: str = 'Running path',
+                         thread_hex: str = '#000000') -> str:
+        """Add an editable open polyline. Never alter the original imported artwork."""
+        if len(self.design.objects) >= 10000:
+            raise ValueError('Object limit reached')
+        if not isinstance(name, str) or not name or len(name) > 512:
+            raise ValueError('Path needs a name (maximum 512 characters)')
+        points = tuple(points)
+        if not 2 <= len(points) <= MAX_DRAW_POINTS or any(not isinstance(p, Point) for p in points):
+            raise ValueError('Running path requires 2–5000 finite points')
+        if any(abs(p.x) > 10000 or abs(p.y) > 10000 for p in points):
+            raise ValueError('Drawn path exceeds supported coordinates')
+        if any(a == b for a, b in zip(points, points[1:])) or len(set(points)) < 2:
+            raise ValueError('Running path contains duplicate neighbouring points')
+        thread_hex = validate_thread(thread_hex)
+        taken = {obj.object_id for obj in self.design.objects}
+        counter = 1
+        while f'drawn-{counter}' in taken:
+            counter += 1
+        ident = f'drawn-{counter}'
+        obj = EmbroideryObject(ident, name, 'running',
+                              (Stroke(ident, points),), StitchSettings(style='running'),
+                              thread_hex)
+        self._apply(replace(self.design, objects=self.design.objects + (obj,)))
+        return ident
+
+    def set_stitch_kind(self, object_id: str, kind: str) -> None:
+        """Only safe conversions: an open line cannot silently become a filled polygon."""
+        obj = self.object(object_id)
+        if kind not in {'running', 'tatami'} or obj.kind not in {'running', 'tatami'}:
+            raise ValueError('Only running and closed tatami objects can be switched here')
+        if kind == 'tatami' and (not obj.strokes or any(
+                not stroke.closed or len(stroke.points) < 3 for stroke in obj.strokes)):
+            raise ValueError('Tatami requires closed paths with at least three vertices')
+        if kind == obj.kind:
+            return
+        self._replace(object_id, replace(obj, kind=kind,
+                         settings=replace(obj.settings, style=kind)))
 
     def reorder(self, object_id: str, destination_index: int) -> None:
         if type(destination_index) is not int or not 0 <= destination_index < len(self.design.objects):

@@ -23,3 +23,19 @@ Lettering, custom fills, appliqué sequencing, thread chart matching, robust pro
 ## Next: precision tools
 
 Add explicit object creation and SVG assignment, snapping and handles, object-level stitch preflight, and full UI integration tests on the supported systems. Keep the first physical sew-out separate from UI progress.
+
+## v0.8.0 — precision editing (implemented)
+
+- A grid selector (off/0.5/1/2/5 mm) with absolute object-anchor snapping.
+- Expanded selection hit area for narrow paths, and deferred Qt scene rebuilding after drag.
+- Draw open running paths on the hoop (Enter to finish, Escape to cancel); save them as proper objects.
+- Import SVG strokes as independently editable running objects, rather than bundling everything into one.
+- Explicit running/tatami conversion for closed paths. No invented satin rails.
+- Core regression tests for geometry, snap rounding, project saving and undo. Qt interaction tests run in CI.
+
+## v0.9.0 — next
+
+- Node editing and proper closing/opening paths, including mouse and keyboard tools.
+- SVG assignment/grouping for holes and multi-contour fills.
+- Object-specific stitch previews and improved preflight warnings.
+- Release packaging and independent viewer checks before attempting machine sew-outs.
