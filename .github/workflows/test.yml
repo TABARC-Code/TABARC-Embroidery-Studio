@@ -42,5 +42,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
       - run: python -m pip install -e '.[test,desktop]'
       - run: python -m pytest -q tests/test_desktop.py tests/test_editor.py
