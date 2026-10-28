@@ -184,6 +184,116 @@ class EditorSession:
         self._apply(replace(self.design, objects=self.design.objects + (obj,)))
         return ident
 
+    def _replace_stroke(self, object_id: str, stroke_index: int, stroke: Stroke) -> None:
+        obj = self.object(object_id)
+        if obj.kind not in {'running', 'tatami'} or obj.curve_paths:
+            raise ValueError('Only flattened running and tatami paths are node-editable')
+        if type(stroke_index) is not int or not 0 <= stroke_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        if not 2 <= len(stroke.points) <= MAX_DRAW_POINTS:
+            raise ValueError('Contour requires 2–5000 vertices')
+        if stroke.closed and len(stroke.points) < 3:
+            raise ValueError('A closed contour needs at least three vertices')
+        if obj.kind == 'tatami' and not stroke.closed:
+            raise ValueError('Tatami contours must remain closed')
+        if any(not isinstance(p, Point) or abs(p.x) > 10000 or abs(p.y) > 10000
+               for p in stroke.points):
+            raise ValueError('Contour coordinates exceed supported limits')
+        if any(a == b for a, b in zip(stroke.points, stroke.points[1:])):
+            raise ValueError('Duplicate neighbouring vertices')
+        strokes = list(obj.strokes)
+        strokes[stroke_index] = stroke
+        if obj.kind == 'tatami':
+            from .tatami import validate_contours
+            validate_contours(tuple(s.points for s in strokes))
+        self._replace(object_id, replace(obj, strokes=tuple(strokes)))
+
+    def edit_node(self, object_id: str, stroke_index: int, node_index: int,
+                  point: Point, *, grid_mm: float | None = None) -> None:
+        obj = self.object(object_id)
+        if type(stroke_index) is not int or not 0 <= stroke_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        stroke = obj.strokes[stroke_index]
+        if type(node_index) is not int or not 0 <= node_index < len(stroke.points):
+            raise ValueError('Invalid vertex index')
+        if not isinstance(point, Point):
+            raise ValueError('Vertex must be a point')
+        if grid_mm is not None:
+            point = Point(snap_coordinate(point.x, grid_mm), snap_coordinate(point.y, grid_mm))
+        points = list(stroke.points)
+        points[node_index] = point
+        self._replace_stroke(object_id, stroke_index, replace(stroke, points=tuple(points)))
+
+    def insert_node(self, object_id: str, stroke_index: int, after_index: int) -> None:
+        obj = self.object(object_id)
+        if type(stroke_index) is not int or not 0 <= stroke_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        stroke = obj.strokes[stroke_index]
+        if type(after_index) is not int or not 0 <= after_index < len(stroke.points):
+            raise ValueError('Invalid vertex index')
+        if after_index == len(stroke.points) - 1 and not stroke.closed:
+            raise ValueError('The last vertex has no next segment')
+        a, b = stroke.points[after_index], stroke.points[(after_index + 1) % len(stroke.points)]
+        points = list(stroke.points)
+        points.insert(after_index + 1, Point((a.x + b.x) / 2, (a.y + b.y) / 2))
+        self._replace_stroke(object_id, stroke_index, replace(stroke, points=tuple(points)))
+
+    def delete_node(self, object_id: str, stroke_index: int, node_index: int) -> None:
+        obj = self.object(object_id)
+        if type(stroke_index) is not int or not 0 <= stroke_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        stroke = obj.strokes[stroke_index]
+        if type(node_index) is not int or not 0 <= node_index < len(stroke.points):
+            raise ValueError('Invalid vertex index')
+        points = list(stroke.points)
+        points.pop(node_index)
+        self._replace_stroke(object_id, stroke_index, replace(stroke, points=tuple(points)))
+
+    def close_contour(self, object_id: str, stroke_index: int = 0,
+                      *, closed: bool = True) -> None:
+        obj = self.object(object_id)
+        if type(stroke_index) is not int or not 0 <= stroke_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        stroke = obj.strokes[stroke_index]
+        if type(closed) is not bool:
+            raise ValueError('Closed must be boolean')
+        self._replace_stroke(object_id, stroke_index, replace(stroke, closed=closed))
+
+    def group_fill_contours(self, object_ids: Sequence[str], *, name: str = 'Compound fill') -> str:
+        """Combine closed paths, retaining their separate rings for even-odd holes."""
+        object_ids = tuple(object_ids)
+        if len(object_ids) < 2 or len(object_ids) != len(set(object_ids)):
+            raise ValueError('Select at least two distinct contour objects')
+        if not isinstance(name, str) or not name or len(name) > 512:
+            raise ValueError('Invalid compound fill name')
+        sources = [self.object(oid) for oid in object_ids]
+        if any(obj.kind not in {'running', 'tatami'} or obj.curve_paths or
+               not obj.strokes or any(not s.closed for s in obj.strokes) for obj in sources):
+            raise ValueError('Only closed, flattened running/tatami contours can be grouped')
+        if any(obj.thread_hex != sources[0].thread_hex for obj in sources):
+            raise ValueError('Grouped fill contours must share one thread colour')
+        if any(obj.visible != sources[0].visible for obj in sources):
+            raise ValueError('Grouped contours must have the same visibility')
+        strokes = tuple(stroke for obj in sources for stroke in obj.strokes)
+        from .tatami import validate_contours
+        validate_contours(tuple(stroke.points for stroke in strokes))
+        ids = {obj.object_id for obj in self.design.objects}
+        number = 1
+        while f'fill-{number}' in ids:
+            number += 1
+        ident = f'fill-{number}'
+        settings = (sources[0].settings if sources[0].kind == 'tatami'
+                    else StitchSettings(style='tatami'))
+        merged = EmbroideryObject(ident, name, 'tatami', strokes, settings,
+                                  sources[0].thread_hex, sources[0].visible)
+        selection = set(object_ids)
+        first_index = min(i for i, obj in enumerate(self.design.objects)
+                          if obj.object_id in selection)
+        remainder = [o for o in self.design.objects if o.object_id not in selection]
+        remainder.insert(first_index, merged)
+        self._apply(replace(self.design, objects=tuple(remainder)))
+        return ident
+
     def set_stitch_kind(self, object_id: str, kind: str) -> None:
         """Only safe conversions: an open line cannot silently become a filled polygon."""
         obj = self.object(object_id)

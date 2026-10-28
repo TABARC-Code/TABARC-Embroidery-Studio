@@ -33,9 +33,17 @@ Add explicit object creation and SVG assignment, snapping and handles, object-le
 - Explicit running/tatami conversion for closed paths. No invented satin rails.
 - Core regression tests for geometry, snap rounding, project saving and undo. Qt interaction tests run in CI.
 
-## v0.9.0 — next
+## v0.9.0 — precision nodes and compound contours (implemented)
 
-- Node editing and proper closing/opening paths, including mouse and keyboard tools.
-- SVG assignment/grouping for holes and multi-contour fills.
-- Object-specific stitch previews and improved preflight warnings.
-- Release packaging and independent viewer checks before attempting machine sew-outs.
+- Node handles in the Qt canvas, with grid-aware movement and a right-click insert/delete menu.
+- Open and close flattened running paths; convert to tatami only when the fill is valid.
+- Group separate closed contours as an even-odd tatami object. Nested contours remain holes, and crossing/touching rings fail validation.
+- Save and reopen edits in the existing schema-3 project without changing the original artwork.
+- Add model-level regression tests and Qt offscreen coverage.
+
+## v0.10.0 — next
+
+- Add contour-specific selection and editing within compound fills.
+- Show object-level problems directly in the editor and stitch preview.
+- Improve Bézier path editing without losing original control-point data.
+- Increase independent machine-format testing and log supervised sew-outs.

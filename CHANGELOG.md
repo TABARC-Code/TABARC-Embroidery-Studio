@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 — Nodes and compound contours
+
+- Editable vertices on flattened running/tatami shapes, with grid-snapped drag, midpoint insertion and vertex deletion.
+- Open/close running contours from the Edit menu. Refuse invalid tatami topology before changing the document.
+- Ctrl-select closed contours and combine them into a single even-odd tatami object; nested rings preserve holes, crossing/touching rings are rejected.
+- Added undo/redo and project round-trip regression cases, plus Qt offscreen interaction tests.
+- Still pre-alpha: no Bézier control-handle editor or machine-certified output.
+
+
 ## 0.8.0 — Precision workspace
 
 - Added open-path drawing, a visible snap-grid control and absolute-anchor grid snapping.

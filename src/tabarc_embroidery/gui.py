@@ -23,8 +23,8 @@ from PySide6.QtGui import (QAction, QColor, QPainter, QPainterPath,
                            QPainterPathStroker, QPen, QBrush)
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGraphicsPathItem, QGraphicsScene, QGraphicsView,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QFileDialog, QFormLayout, QGraphicsEllipseItem, QGraphicsPathItem, QGraphicsScene, QGraphicsView,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QAbstractItemView, QMenu,
     QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget,
 )
 
@@ -59,6 +59,43 @@ class CanvasItem(QGraphicsPathItem):
             dx, dy, oid = delta.x() / PX, delta.y() / PX, self.object_id
             # Do not destroy this graphics item from inside its own release event.
             QTimer.singleShot(0, lambda: self._on_move(oid, dx, dy))
+
+
+class NodeHandle(QGraphicsEllipseItem):
+    """A draggable vertex. Commit after Qt finishes its mouse event."""
+
+    def __init__(self, object_id, contour, vertex, point, on_move, on_insert, on_delete):
+        super().__init__(-4.5, -4.5, 9, 9)
+        self.object_id = object_id
+        self.contour = contour
+        self.vertex = vertex
+        self._on_move = on_move
+        self._on_insert = on_insert
+        self._on_delete = on_delete
+        self.setPos(point.x * PX, point.y * PX)
+        self.setPen(QPen(QColor('#193f5e'), 1.5))
+        self.setBrush(QBrush(QColor('#f8fcff')))
+        self.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setZValue(35)
+        self._original = self.pos()
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if (self.pos() - self._original).manhattanLength() > 0.01:
+            oid, contour, vertex = self.object_id, self.contour, self.vertex
+            x, y = self.pos().x() / PX, self.pos().y() / PX
+            QTimer.singleShot(0, lambda: self._on_move(oid, contour, vertex, x, y))
+
+    def contextMenuEvent(self, event):
+        menu = QMenu()
+        insert = menu.addAction('Insert midpoint after this node')
+        delete = menu.addAction('Delete this node')
+        action = menu.exec(event.screenPos())
+        oid, contour, vertex = self.object_id, self.contour, self.vertex
+        if action == insert:
+            QTimer.singleShot(0, lambda: self._on_insert(oid, contour, vertex))
+        elif action == delete:
+            QTimer.singleShot(0, lambda: self._on_delete(oid, contour, vertex))
 
 
 class HoopView(QGraphicsView):
@@ -105,6 +142,7 @@ class StudioWindow(QMainWindow):
         self._plan = None
         self._preview_position = 0
         self._scene_items: dict[str, CanvasItem] = {}
+        self._node_handles: list[NodeHandle] = []
         self._draw_points: list[Point] = []
         self._draw_hover: Point | None = None
         self._draw_preview = None
@@ -129,6 +167,7 @@ class StudioWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         self.objects = QListWidget()
+        self.objects.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.objects.currentItemChanged.connect(self._selection_from_list)
         self.objects.itemChanged.connect(self._visibility_from_list)
         layout.addWidget(self.objects)
@@ -228,6 +267,12 @@ class StudioWindow(QMainWindow):
         self._action(edit, 'Finish path', self.finish_path, 'Return')
         self._action(edit, 'Cancel path', self.cancel_path, 'Escape')
         self._action(edit, 'Remove last point', self.remove_draw_point, 'Backspace')
+        edit.addSeparator()
+        self.node_action = self._action(edit, 'Edit path nodes', self._set_node_mode, 'N')
+        self.node_action.setCheckable(True)
+        self._action(edit, 'Close selected contour', lambda: self._close_selected(True))
+        self._action(edit, 'Open selected contour', lambda: self._close_selected(False))
+        self._action(edit, 'Group selected contours as fill', self._group_selected)
         view = self.menuBar().addMenu('&View')
         self._action(view, 'Fit hoop', self._fit, 'Ctrl+0')
         self._action(view, 'Generate stitch preview', self.generate_preview, 'F5')
@@ -299,6 +344,7 @@ class StudioWindow(QMainWindow):
         self.scene.clear()
         self._draw_preview = None
         self._scene_items = {}
+        self._node_handles = []
         self.objects.clear()
         if self.editor:
             doc = self.editor.design
@@ -347,7 +393,8 @@ class StudioWindow(QMainWindow):
             self._redraw_path_preview()
             if fit:
                 self._fit()
-            if hasattr(self, 'draw_action') and self.draw_action.isChecked():
+            if (hasattr(self, 'draw_action') and self.draw_action.isChecked()) or (
+                    hasattr(self, 'node_action') and self.node_action.isChecked()):
                 for item in self._scene_items.values():
                     item.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable, False)
         self._refreshing = False
@@ -366,6 +413,7 @@ class StudioWindow(QMainWindow):
             self.objects.setCurrentRow(-1)
         for oid, graphics in self._scene_items.items():
             graphics.setSelected(oid == object_id)
+        self._redraw_nodes()
 
     def _selection_from_list(self, current, previous):
         if self._refreshing:
@@ -375,6 +423,7 @@ class StudioWindow(QMainWindow):
         for oid, graphics in self._scene_items.items():
             graphics.setSelected(oid == self.active_id)
         self._refreshing = False
+        self._redraw_nodes()
         self._refresh_properties()
 
     def _selection_from_scene(self):
@@ -384,6 +433,7 @@ class StudioWindow(QMainWindow):
         self._refreshing = True
         self._select(selected[-1].object_id if selected else None)
         self._refreshing = False
+        self._redraw_nodes()
         self._refresh_properties()
 
     def _refresh_properties(self):
@@ -428,17 +478,90 @@ class StudioWindow(QMainWindow):
             QMessageBox.warning(self, 'Cannot change stitch type', str(exc))
             self._refresh_properties()
 
+    def _redraw_nodes(self):
+        for handle in self._node_handles:
+            self.scene.removeItem(handle)
+        self._node_handles.clear()
+        if not (self.editor and self.active_id and self.node_action.isChecked()):
+            return
+        obj = self.editor.object(self.active_id)
+        if obj.kind not in {'running', 'tatami'} or obj.curve_paths:
+            self.statusBar().showMessage('This object has no editable flat vertices')
+            return
+        for contour, stroke in enumerate(obj.strokes):
+            for vertex, point in enumerate(stroke.points):
+                handle = NodeHandle(obj.object_id, contour, vertex, point,
+                                    self._move_node, self._insert_node, self._delete_node)
+                self.scene.addItem(handle)
+                self._node_handles.append(handle)
+
+    def _set_node_mode(self, checked):
+        if checked and self.draw_action.isChecked():
+            self.draw_action.setChecked(False)
+            self._set_draw_mode(False)
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag if checked else
+                              QGraphicsView.DragMode.RubberBandDrag)
+        for item in self._scene_items.values():
+            item.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable, not checked)
+        self._redraw_nodes()
+        self.statusBar().showMessage('Drag vertices; right-click a vertex for insert/delete'
+                                     if checked else 'Selection mode')
+
+    def _node_change(self, method, *args, **kwargs):
+        if not self.editor:
+            return
+        try:
+            getattr(self.editor, method)(*args, **kwargs)
+            self._refresh_scene()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Cannot edit contour', str(exc))
+            self._refresh_scene()
+
+    def _move_node(self, oid, contour, vertex, x, y):
+        self.active_id = oid
+        self._node_change('edit_node', oid, contour, vertex, Point(x, y), grid_mm=self._grid())
+
+    def _insert_node(self, oid, contour, vertex):
+        self.active_id = oid
+        self._node_change('insert_node', oid, contour, vertex)
+
+    def _delete_node(self, oid, contour, vertex):
+        self.active_id = oid
+        self._node_change('delete_node', oid, contour, vertex)
+
+    def _close_selected(self, closed):
+        if self.editor and self.active_id:
+            self._node_change('close_contour', self.active_id, closed=closed)
+
+    def _group_selected(self):
+        if not self.editor:
+            return
+        ids = [item.data(Qt.ItemDataRole.UserRole) for item in self.objects.selectedItems()]
+        if len(ids) < 2:
+            QMessageBox.information(self, 'Select contours',
+                                    'Ctrl-click two or more closed contour objects in the list.')
+            return
+        try:
+            self.active_id = self.editor.group_fill_contours(ids)
+            self._refresh_scene()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Cannot group contours', str(exc))
+
     def _grid(self):
         label = self.grid_combo.currentText()
         return None if label == 'Off' else float(label.split()[0])
 
     def _set_draw_mode(self, checked):
+        if checked and self.node_action.isChecked():
+            self.node_action.setChecked(False)
+            self._set_node_mode(False)
         self.view.draw_callback = self._draw_click if checked else None
         self.view.hover_callback = self._draw_hover_at if checked else None
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag if checked else
                               QGraphicsView.DragMode.RubberBandDrag)
         for item in self._scene_items.values():
             item.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsMovable, not checked)
+        self._redraw_nodes()
         if not checked:
             self.cancel_path()
         self.statusBar().showMessage('Click to add points; Enter finishes, Esc cancels'
@@ -578,7 +701,7 @@ class StudioWindow(QMainWindow):
     def _update_title(self):
         name = self.project_path.name if self.project_path else 'Untitled'
         marker = ' *' if self.editor and self.editor.dirty else ''
-        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.8.0')
+        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.9.0')
 
     def save(self):
         if not self.editor:

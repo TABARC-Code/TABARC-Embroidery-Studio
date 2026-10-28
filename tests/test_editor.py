@@ -192,3 +192,116 @@ def test_stitch_kind_change_requires_closed_paths():
     assert editor.object('closed').settings.style == 'running'
     with pytest.raises(ValueError):
         editor.set_stitch_kind('closed', 'satin')
+
+
+def test_edit_nodes_insert_delete_and_save_roundtrip():
+    editor = session()
+    before = editor.object('red-line').strokes[0]
+    origin = editor.source
+    editor.insert_node('red-line', 0, 0)
+    inserted = editor.object('red-line').strokes[0]
+    assert len(inserted.points) == len(before.points) + 1
+    assert inserted.points[1] == Point((before.points[0].x + before.points[1].x) / 2,
+                                      (before.points[0].y + before.points[1].y) / 2)
+    editor.edit_node('red-line', 0, 1, Point(9.3, 7.8), grid_mm=1.0)
+    assert editor.object('red-line').strokes[0].points[1] == Point(9, 8)
+    reloaded, source = load_project(save_project(editor.design, editor.source))
+    assert source == origin
+    assert reloaded.objects[0].strokes[0].points[1] == Point(9, 8)
+    editor.delete_node('red-line', 0, 1)
+    assert editor.object('red-line').strokes[0] == before
+    assert editor.undo()
+    assert len(editor.object('red-line').strokes[0].points) == len(inserted.points)
+    assert editor.redo()
+    assert editor.object('red-line').strokes[0] == before
+
+
+def test_close_open_path_and_convert_to_fill():
+    editor = session()
+    ident = editor.add_running_path((Point(3, 3), Point(20, 3), Point(20, 20), Point(3, 20)))
+    with pytest.raises(ValueError, match='closed'):
+        editor.set_stitch_kind(ident, 'tatami')
+    editor.close_contour(ident, closed=True)
+    assert editor.object(ident).strokes[0].closed
+    editor.set_stitch_kind(ident, 'tatami')
+    assert editor.object(ident).kind == 'tatami'
+    with pytest.raises(ValueError, match='closed'):
+        editor.close_contour(ident, closed=False)
+    assert editor.object(ident).strokes[0].closed
+    assert any(event.opcode == Op.STITCH for event in generate_design_plan(editor.design).events)
+    editor.set_stitch_kind(ident, 'running')
+    editor.close_contour(ident, closed=False)
+    assert not editor.object(ident).strokes[0].closed
+
+
+def test_compound_tatami_hole_survives_export_and_undo():
+    from tabarc_embroidery.tatami import _inside_fill
+    editor = session()
+    outer = editor.add_running_path((Point(40, 40), Point(80, 40),
+                                     Point(80, 80), Point(40, 80)), thread_hex='#abcdef')
+    inner = editor.add_running_path((Point(50, 50), Point(70, 50),
+                                     Point(70, 70), Point(50, 70)), thread_hex='#abcdef')
+    editor.close_contour(outer)
+    editor.close_contour(inner)
+    before_count = len(editor.design.objects)
+    combined = editor.group_fill_contours((outer, inner), name='Ring fill')
+    obj = editor.object(combined)
+    assert obj.kind == 'tatami' and len(obj.strokes) == 2
+    assert obj.thread_hex == '#ABCDEF'
+    assert len(editor.design.objects) == before_count - 1
+    assert _inside_fill(Point(42, 42), tuple(s.points for s in obj.strokes))
+    assert not _inside_fill(Point(60, 60), tuple(s.points for s in obj.strokes))
+    restored, source = load_project(save_project(editor.design, editor.source))
+    assert source == editor.source
+    assert restored.objects[-1].strokes == obj.strokes
+    plan = generate_design_plan(restored)
+    assert plan.events[-1].opcode == Op.END
+    assert editor.undo()
+    assert editor.object(outer) and editor.object(inner)
+    assert editor.redo()
+    assert editor.object(combined).kind == 'tatami'
+
+
+def test_node_edit_rejects_invalid_geometry_without_history_change():
+    editor = session()
+    ident = editor.add_running_path((Point(10, 10), Point(15, 10), Point(15, 15)))
+    editor.close_contour(ident)
+    editor.set_stitch_kind(ident, 'tatami')
+    before = editor.design
+    for run in (
+        lambda: editor.edit_node(ident, 0, 1, Point(10, 10)),
+        lambda: editor.edit_node(ident, 0, 1, Point(1e9, 0)),
+        lambda: editor.delete_node(ident, 0, 0),
+        lambda: editor.insert_node(ident, 4, 0),
+        lambda: editor.close_contour(ident, closed=False),
+        lambda: editor.edit_node(ident, 0, -1, Point(1, 1)),
+    ):
+        with pytest.raises(ValueError):
+            run()
+        assert editor.design == before
+    assert editor.undo()
+    assert editor.object(ident).kind == 'running'
+
+
+def test_compound_rejects_different_colours_intersections_and_open_contours():
+    editor = session()
+    a = editor.add_running_path((Point(2, 2), Point(32, 2), Point(32, 32), Point(2, 32)))
+    b = editor.add_running_path((Point(20, 20), Point(42, 20), Point(42, 42), Point(20, 42)))
+    editor.close_contour(a)
+    editor.close_contour(b)
+    before = editor.design
+    with pytest.raises(ValueError, match='cross'):
+        editor.group_fill_contours((a, b))
+    assert editor.design == before
+    editor.move(b, 35, 35)
+    editor.change(b, thread_hex='#AA0000')
+    before = editor.design
+    with pytest.raises(ValueError, match='colour'):
+        editor.group_fill_contours((a, b))
+    assert editor.design == before
+    editor.change(b, thread_hex='#000000')
+    editor.close_contour(b, closed=False)
+    before = editor.design
+    with pytest.raises(ValueError, match='closed'):
+        editor.group_fill_contours((a, b))
+    assert editor.design == before

@@ -1,10 +1,10 @@
 # TABARC Embroidery Studio
 
-**Version 0.8.0 · pre-alpha · Windows, macOS and Linux**
+**Version 0.9.0 · pre-alpha · Windows, macOS and Linux**
 
 An embroidery editor in its early days. The desktop window now handles projects and stitch playback; the proven geometry engine still works behind a command line: I can import a limited set of SVG geometry, lay down running stitches, build a satin column from a pair of rails, fill closed areas with tatami stitches and put differently coloured objects together in a single design.
 
-It is not a finished embroidery programme. The desktop editor now supports open running-path drawing, grid-snapped positioning and per-path SVG selection; it still has plenty of rough edges. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
+It is not a finished embroidery programme. The desktop editor now supports grid-snapped node editing, open/closed running paths and compound tatami fills. The underlying stitch engine still has plenty of rough edges. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
 
 ## What works
 
@@ -27,7 +27,7 @@ python -m pip install -e '.[desktop]'
 tabarc-studio examples/multi-object.tbes
 ```
 
-There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can drag or draw running paths, choose grid snapping, undo edits, change closed running paths to tatami, preview needle movements, save projects and export DST after preflight checks. These are editing tools, not substitutes for a test sew-out.
+There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can drag or draw running paths, move or insert individual vertices, close/open running contours, select multiple closed paths and group them into a compound tatami fill. Grid snapping, undo/redo, stitch playback and DST export remain available. These are editing tools, not substitutes for a test sew-out.
 
 See [desktop instructions](docs/DESKTOP-WORKFLOW.md) for the actual workflow and restrictions.
 
@@ -100,7 +100,7 @@ CI is configured for Windows, macOS and Linux, with an extra job for pyembroider
 
 ## What's next
 
-First: improve path/node editing, add a proper SVG assignment wizard and make selection work at every zoom level. After that: underlay, density warnings, colour routing, useful error messages and a machine-specific validation matrix. I've put the details in [DESCRIPTION.md](DESCRIPTION.md), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/STATUS.md](docs/STATUS.md).
+First: improve Bézier handles, add a proper SVG assignment wizard and make selection work at every zoom level. After that: underlay, density warnings, colour routing, useful error messages and a machine-specific validation matrix. I've put the details in [DESCRIPTION.md](DESCRIPTION.md), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/STATUS.md](docs/STATUS.md).
 
 For the source structure and supported native project data, see [docs/OBJECT-DOCUMENT.md](docs/OBJECT-DOCUMENT.md). The command-line interface lives in `src/tabarc_embroidery/cli.py` and the stitch engines are `running.py`, `satin.py` and `tatami.py`.
 
