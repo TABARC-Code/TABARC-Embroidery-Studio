@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
                                      description="Experimental SVG embroidery digitiser and machine-format exporter")
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
+    studio = commands.add_parser("studio", help="Open the optional desktop editor")
+    studio.add_argument("source", nargs="?", type=Path, help="Optional .tbes or SVG design")
     convert = commands.add_parser("convert", help="Digitise SVG or .tbes project into a supported embroidery format")
     convert.add_argument("source", type=Path)
     convert.add_argument("output", type=Path)
@@ -86,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("source", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'studio':
+            try:
+                from .gui import main as launch_studio
+            except ImportError as exc:
+                if exc.name and (exc.name == 'PySide6' or exc.name.startswith('PySide6.')):
+                    raise ValueError("Desktop support is optional. Install with: python -m pip install -e '.[desktop]'") from exc
+                raise
+            return launch_studio([str(args.source)] if args.source else [])
         if args.command == "compose":
             if args.source.suffix.lower() != '.svg' or args.output.suffix.lower() != '.tbes':
                 raise ValueError('compose requires .svg input and .tbes output')

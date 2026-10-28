@@ -1,6 +1,6 @@
 # Status
 
-**v0.6.0, 27 October 2026 — multi-object document model and schema-3 projects implemented; pre-alpha.**
+**v0.7.0, 27 October 2026 — multi-object document model and schema-3 projects implemented; pre-alpha.**
 
 106 automated tests passed, one optional-dependency module skipped because
 pyembroidery could not be installed here. A separate decoder supplied in the
@@ -16,3 +16,5 @@ explicit events and unsupported machine exports fail closed.
 
 No GUI, physical sew-outs or completed machine-profile validation.
 See [object model](OBJECT-DOCUMENT.md) and [next sprint](NEXT-SPRINT.md).
+
+Desktop workbench available as an optional PySide6 installation. Local Qt execution was unavailable during development; an offscreen CI smoke test has been added. Physical machine testing is still outstanding.

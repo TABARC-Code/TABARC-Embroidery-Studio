@@ -57,3 +57,12 @@
 - Added reference and licence inventory for the research projects and a separate validation protocol.
 - Added contract tests for adapter mapping, invalid colours, absent dependencies, fail-closed validation and unsupported formats.
 - **Known limit:** The external package is unavailable in the local test environment; independent decoding and machine sew-outs remain unverified.
+
+## 0.7.0 — Desktop foundation
+
+- Added an optional Qt desktop editor with a measured hoop, object list and stitch preview.
+- Objects can be moved, renamed, recoloured, hidden and reordered. Undo and redo are available.
+- Existing `.tbes` projects open without a conversion step; older project versions are upgraded in memory and saved using the current editable format.
+- Added atomic project saving, a preflight-gated DST export and bounded needle playback.
+- Headless editing and save/reopen tests remain separate from the Qt smoke tests.
+- Still pre-alpha: desktop rendering needs verification on each supported operating system, and no machine sew-out has been approved.

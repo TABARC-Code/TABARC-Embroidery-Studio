@@ -20,3 +20,7 @@ Underlay, pull compensation, pattern fills, automated routing, thread palettes, 
 The code is currently **pre-alpha**. It has passing automated tests, not proven production stitch quality. The project is MIT-licensed, developed under [TABARC-Code](https://github.com/TABARC-Code), and built with a bias towards readable modules rather than an elaborate framework for its own sake.
 
 See [README.md](README.md) for setup, [docs/ROADMAP.md](docs/ROADMAP.md) for staged work, and [docs/RELATED-PROJECTS.md](docs/RELATED-PROJECTS.md) for other open-source embroidery projects worth exploring.
+
+## Desktop workbench (v0.7.0)
+
+A basic Qt workbench now loads editable designs. It provides a hoop canvas, object ordering, thread colours, settings, undo/redo and stitch playback. Drawing tools and production-grade diagnostics are still on the workbench, not in the release. The command-line pipeline remains available without Qt.

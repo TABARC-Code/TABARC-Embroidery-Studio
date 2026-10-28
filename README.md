@@ -1,10 +1,10 @@
 # TABARC Embroidery Studio
 
-**Version 0.6.0 · pre-alpha · Windows, macOS and Linux (Python command line)**
+**Version 0.7.0 · pre-alpha · Windows, macOS and Linux**
 
-An embroidery editor, eventually. For now, the interesting part works behind a command line: I can import a limited set of SVG geometry, lay down running stitches, build a satin column from a pair of rails, fill closed areas with tatami stitches and put differently coloured objects together in a single design.
+An embroidery editor in its early days. The desktop window now handles projects and stitch playback; the proven geometry engine still works behind a command line: I can import a limited set of SVG geometry, lay down running stitches, build a satin column from a pair of rails, fill closed areas with tatami stitches and put differently coloured objects together in a single design.
 
-It is not a finished embroidery programme. There is no desktop drawing window yet. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
+It is not a finished embroidery programme. The new desktop editor supports object moves and settings but not freehand drawing. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
 
 ## What works
 
@@ -17,6 +17,19 @@ It is not a finished embroidery programme. There is no desktop drawing window ye
 - Inspect selected third-party JSON-based project geometry and retain it as non-sewing reference objects. Importing a shape is not the same as reproducing its stitch programme.
 
 `TRIM` and `STOP` exist in the internal event model. The built-in DST writer refuses them rather than making up an equivalent command. The optional exporter has its own format-specific limits.
+
+## Desktop editor
+
+Install the optional Qt interface and open the bundled multi-object design:
+
+```sh
+python -m pip install -e '.[desktop]'
+tabarc-studio examples/multi-object.tbes
+```
+
+There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can drag objects, undo edits, preview the needle sequence, save projects and export DST after preflight checks. These are editing tools, not substitutes for a test sew-out.
+
+See [desktop instructions](docs/DESKTOP-WORKFLOW.md) for the actual workflow and restrictions.
 
 ## Install
 
@@ -87,7 +100,7 @@ CI is configured for Windows, macOS and Linux, with an extra job for pyembroider
 
 ## What's next
 
-First: a PySide6 workspace with a proper hoop, object list and stitch playback. After that: underlay, density warnings, colour routing, useful error messages and a machine-specific validation matrix. I've put the details in [DESCRIPTION.md](DESCRIPTION.md), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/STATUS.md](docs/STATUS.md).
+First: finish the PySide6 workspace with drawing tools and precise object handles. After that: underlay, density warnings, colour routing, useful error messages and a machine-specific validation matrix. I've put the details in [DESCRIPTION.md](DESCRIPTION.md), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/STATUS.md](docs/STATUS.md).
 
 For the source structure and supported native project data, see [docs/OBJECT-DOCUMENT.md](docs/OBJECT-DOCUMENT.md). The command-line interface lives in `src/tabarc_embroidery/cli.py` and the stitch engines are `running.py`, `satin.py` and `tatami.py`.
 
