@@ -1,0 +1,42 @@
+{
+  "source_archive": "TABARC-Embroidery-Reconstruction-v0.3.0.zip",
+  "native_projects": 4,
+  "objects": 63,
+  "source_style_counts": {
+    "Applique": 3,
+    "Fill": 14,
+    "Guide": 1,
+    "Manual": 1,
+    "Running": 2,
+    "SatinColumn": 5,
+    "Zigzag": 37
+  },
+  "round_trip_verified": true,
+  "native_stitches_recreated": false,
+  "source_files": [
+    {
+      "file": "public-samples/coffee-and-books/coffee-and-books.ostch",
+      "sha256": "1b1486e82ae27cd44ee3c67cad9f1122f2bbb311e86e7856cb3d5335613c7830",
+      "objects": 13,
+      "curves": 361
+    },
+    {
+      "file": "public-samples/custard-cream/custard.ostch",
+      "sha256": "3c44273853345abf9a95886640ee29322fcfb0b1a87640e389ffeddb6f04eed0",
+      "objects": 36,
+      "curves": 108
+    },
+    {
+      "file": "public-samples/jam-biscuit/jam-biscuit.ostch",
+      "sha256": "658ced4301f1511e3fc5cc6a02d8253317fba209383b0a646a55816b208e8f91",
+      "objects": 5,
+      "curves": 126
+    },
+    {
+      "file": "public-samples/malted-milk/malted.ostch",
+      "sha256": "17cc24776156d560ab12284ddec84beb40f4655d3d7fde903f74484c8c2c175c",
+      "objects": 9,
+      "curves": 89
+    }
+  ]
+}

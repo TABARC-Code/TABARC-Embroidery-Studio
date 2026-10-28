@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60mm" height="40mm" viewBox="0 0 60 40">
+  <g transform="translate(5 5)">
+    <path id="curve" d="M 1 25 C 15 -5 30 -5 45 25" fill="none" stroke="#000"/>
+  </g>
+</svg>

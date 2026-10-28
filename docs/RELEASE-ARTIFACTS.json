@@ -1,0 +1,23 @@
+{
+  "version": "0.6.0",
+  "date": "2026-10-27",
+  "tests": {
+    "passed": 106,
+    "skipped": 1,
+    "pyembroidery_installed": false
+  },
+  "source_adapter": {
+    "native_projects": 4,
+    "objects": 63,
+    "reference_only": true
+  },
+  "independent_dst_probe": {
+    "example": "multi-object.dst",
+    "records_matched": 185,
+    "records_tested": 185,
+    "source": "user evidence archive dst_probe.py"
+  },
+  "pyembroidery_validation": "not_run",
+  "machine_sewouts": "not_run",
+  "sample_export_note": "Machine files are generated locally from synthetic examples, rather than committed as release artefacts."
+}

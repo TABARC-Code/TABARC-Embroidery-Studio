@@ -1,0 +1,7 @@
+{
+  "objects": [
+    {"id": "red-line", "name": "Upper line", "kind": "running", "stroke_indices": [0], "thread_hex": "#AA0000", "settings": {"stitch_length_mm": 2.0}},
+    {"id": "blue-line", "name": "Lower line", "kind": "running", "stroke_indices": [1], "thread_hex": "#0000DD"},
+    {"id": "green-field", "name": "Filled rectangle", "kind": "tatami", "stroke_indices": [2], "thread_hex": "#009955", "settings": {"row_spacing_mm": 1.0, "stitch_length_mm": 3.0}}
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "source_archive": "TABARC-Embroidery-Reconstruction-v0.3.0.zip",
+  "verified_manifest_records": 34,
+  "native_projects": 4,
+  "machine_exports": 29,
+  "native_objects": 63,
+  "native_style_counts": {
+    "Applique": 3,
+    "Fill": 14,
+    "Guide": 1,
+    "Manual": 1,
+    "Running": 2,
+    "SatinColumn": 5,
+    "Zigzag": 37
+  },
+  "projects": [
+    {
+      "source_name": "coffee-and-books.ostch",
+      "source_sha256": "1b1486e82ae27cd44ee3c67cad9f1122f2bbb311e86e7856cb3d5335613c7830",
+      "schema_version": 15,
+      "object_count": 13,
+      "style_counts": {
+        "Fill": 11,
+        "Guide": 1,
+        "Running": 1
+      },
+      "curve_segments": 361,
+      "subpaths": 34,
+      "geometry_empty_objects": 0,
+      "warnings": []
+    },
+    {
+      "source_name": "custard.ostch",
+      "source_sha256": "3c44273853345abf9a95886640ee29322fcfb0b1a87640e389ffeddb6f04eed0",
+      "schema_version": 11,
+      "object_count": 36,
+      "style_counts": {
+        "Applique": 1,
+        "Manual": 1,
+        "Running": 1,
+        "Zigzag": 33
+      },
+      "curve_segments": 108,
+      "subpaths": 36,
+      "geometry_empty_objects": 2,
+      "warnings": [
+        "Some native object features are omitted in geometry-only SVG"
+      ]
+    },
+    {
+      "source_name": "jam-biscuit.ostch",
+      "source_sha256": "658ced4301f1511e3fc5cc6a02d8253317fba209383b0a646a55816b208e8f91",
+      "schema_version": 11,
+      "object_count": 5,
+      "style_counts": {
+        "Applique": 1,
+        "Fill": 3,
+        "Zigzag": 1
+      },
+      "curve_segments": 126,
+      "subpaths": 5,
+      "geometry_empty_objects": 0,
+      "warnings": []
+    },
+    {
+      "source_name": "malted.ostch",
+      "source_sha256": "17cc24776156d560ab12284ddec84beb40f4655d3d7fde903f74484c8c2c175c",
+      "schema_version": 11,
+      "object_count": 9,
+      "style_counts": {
+        "Applique": 1,
+        "SatinColumn": 5,
+        "Zigzag": 3
+      },
+      "curve_segments": 89,
+      "subpaths": 18,
+      "geometry_empty_objects": 0,
+      "warnings": [
+        "Some native object features are omitted in geometry-only SVG"
+      ]
+    }
+  ],
+  "limitations": [
+    "Only archive record hashes and observed native JSON syntax are checked",
+    "No source machine export was regenerated from native artwork",
+    "The report does not establish physical sew-out quality or software compatibility",
+    "No original design or binary is included in this output"
+  ]
+}

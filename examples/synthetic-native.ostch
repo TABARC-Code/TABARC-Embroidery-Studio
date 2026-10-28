@@ -1,0 +1,85 @@
+{
+  "version": 11,
+  "selected_idx": null,
+  "objects": [
+    {
+      "id": 1001,
+      "name": "TABARC synthetic cubic sample",
+      "visible": true,
+      "stitch_style": {
+        "Running": {
+          "spacing_mm": 2.5
+        }
+      },
+      "segments": [
+        {
+          "p0": [
+            0,
+            0
+          ],
+          "p1": [
+            8,
+            -4
+          ],
+          "p2": [
+            18,
+            12
+          ],
+          "p3": [
+            25,
+            8
+          ]
+        },
+        {
+          "p0": [
+            25,
+            8
+          ],
+          "p1": [
+            30,
+            6
+          ],
+          "p2": [
+            36,
+            0
+          ],
+          "p3": [
+            45,
+            8
+          ]
+        }
+      ],
+      "node_modes": [
+        "Smooth",
+        "Smooth",
+        "Smooth"
+      ],
+      "meta_nodes": [],
+      "anchor_props": [],
+      "thread_color": [
+        34,
+        68,
+        102
+      ],
+      "closed": false,
+      "extra_subpaths": [],
+      "manual_points": []
+    }
+  ],
+  "hoop": {
+    "name": "Synthetic test frame",
+    "width_mm": 100,
+    "height_mm": 100,
+    "visible": true,
+    "color": [
+      120,
+      120,
+      120
+    ]
+  },
+  "references": [],
+  "branch_groups": [],
+  "text_boxes": [],
+  "embedded_fonts": [],
+  "generators": []
+}
