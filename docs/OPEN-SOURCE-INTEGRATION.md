@@ -33,7 +33,7 @@ This is a working-source review, not an assertion that all repos are mature, tha
 | Lilo | https://github.com/Kadwood/lilo | Offline desktop beginner experience, thread libraries, hoop selection | TypeScript | GPL-3.0 | Study UX and feature coverage, no source copied |
 | myembro | https://github.com/linker2k/myembro | Mobile PES viewing concepts | Android | Verify per repo | Optional future mobile viewer |
 
-**Licensing caution:** An MIT library dependency and a GPL application are very different propositions. The current TABARC project has not selected a distribution licence. A permissive dependency can usually be managed with correct notices; lifting GPL components into a differently licensed application needs a deliberate legal and project decision. No third-party source is included in v0.4.0.
+**Licensing caution:** An MIT library dependency and a GPL application are very different propositions. TABARC Embroidery Studio is now MIT-licensed; that does not permit incorporating GPL-licensed code without addressing the GPL's distribution terms. A permissive dependency can usually be managed with correct notices; lifting GPL components into a differently licensed application needs a deliberate legal and project decision. No third-party source is included in v0.4.0.
 
 ## Important distinctions
 
