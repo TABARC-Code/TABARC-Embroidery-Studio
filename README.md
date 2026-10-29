@@ -1,10 +1,10 @@
 # TABARC Embroidery Studio
 
-**Version 0.9.0 · pre-alpha · Windows, macOS and Linux**
+**Version 0.10.0 · pre-alpha · Windows, macOS and Linux**
 
 An embroidery editor in its early days. The desktop window now handles projects and stitch playback; the proven geometry engine still works behind a command line: I can import a limited set of SVG geometry, lay down running stitches, build a satin column from a pair of rails, fill closed areas with tatami stitches and put differently coloured objects together in a single design.
 
-It is not a finished embroidery programme. The desktop editor now supports grid-snapped node editing, open/closed running paths and compound tatami fills. The underlying stitch engine still has plenty of rough edges. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
+It is not a finished embroidery programme. The desktop editor now handles grid-snapped node editing, compound tatami fills, individual contour selection and retained Bézier reference handles. The underlying stitch engine still has plenty of rough edges. The export code also hasn't earned the right to be trusted with expensive fabric. That comes after proper independent testing and a few sacrificial scraps.
 
 ## What works
 
@@ -27,7 +27,15 @@ python -m pip install -e '.[desktop]'
 tabarc-studio examples/multi-object.tbes
 ```
 
-There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can drag or draw running paths, move or insert individual vertices, close/open running contours, select multiple closed paths and group them into a compound tatami fill. Grid snapping, undo/redo, stitch playback and DST export remain available. These are editing tools, not substitutes for a test sew-out.
+There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can draw running paths, move or insert vertices, close/open contours, group closed paths into a compound tatami fill and select or remove individual rings. Bézier handles are editable on non-sewing reference objects; they do not magically convert into usable stitch columns. Grid snapping, undo/redo, stitch playback and DST export remain available. These are editing tools, not substitutes for a test sew-out.
+
+Use **View > Inspect design warnings** (F6) to review object-level geometry warnings and select the affected object. The same checks are available without Qt:
+
+```sh
+tabarc-embroidery design-check examples/multi-object.tbes
+```
+
+The report distinguishes errors, warnings and non-sewing references. It cannot judge fabric, stabiliser or thread suitability and does not replace the needle-event preflight at export.
 
 See [desktop instructions](docs/DESKTOP-WORKFLOW.md) for the actual workflow and restrictions.
 

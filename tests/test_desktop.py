@@ -138,3 +138,59 @@ def test_desktop_compound_fill_and_undo():
         if window.editor:
             window.editor.mark_saved()
         window.close()
+
+
+def test_desktop_contour_selector_remove_and_diagnostics():
+    app = QApplication.instance() or QApplication([])
+    window = StudioWindow(EXAMPLE)
+    try:
+        outer = window.editor.add_running_path((Point(20, 20), Point(70, 20),
+                                                 Point(70, 70), Point(20, 70)))
+        inner = window.editor.add_running_path((Point(35, 35), Point(55, 35),
+                                                 Point(55, 55), Point(35, 55)))
+        window.editor.close_contour(outer)
+        window.editor.close_contour(inner)
+        combined = window.editor.group_fill_contours([outer, inner])
+        window.active_id = combined
+        window._refresh_scene()
+        assert window.contour_combo.count() == 2
+        window.node_action.trigger()
+        window.contour_combo.setCurrentIndex(1)
+        assert len(window._node_handles) == 4
+        inner_start = window.editor.object(combined).strokes[1].points[0]
+        window._move_node(combined, 1, 0, inner_start.x + 1, inner_start.y + 1)
+        assert window.editor.object(combined).strokes[1].points[0] != inner_start
+        window._remove_selected_contour()
+        assert len(window.editor.object(combined).strokes) == 1
+        window.undo()
+        assert len(window.editor.object(combined).strokes) == 2
+        window.inspect_objects()
+        assert window.diagnostics_list.count() >= 0
+    finally:
+        if window.editor:
+            window.editor.mark_saved()
+        window.close()
+
+
+def test_desktop_curve_control_and_warning_selection():
+    app = QApplication.instance() or QApplication([])
+    reference = Path(__file__).resolve().parents[1] / 'examples' / 'synthetic-native-adapted.tbes'
+    window = StudioWindow(reference)
+    try:
+        oid = next(o.object_id for o in window.editor.design.objects if o.curve_paths)
+        window._select(oid)
+        window.node_action.trigger()
+        assert window._node_handles
+        curve = window.editor.object(oid).curve_paths[0].segments[0]
+        window._move_curve_point(oid, 0, 0, 1, curve.p1.x + 2, curve.p1.y)
+        assert window.editor.object(oid).curve_paths[0].segments[0].p1 != curve.p1
+        window.inspect_objects()
+        entry = next((window.diagnostics_list.item(i) for i in range(window.diagnostics_list.count())
+                      if window.diagnostics_list.item(i).data(Qt.ItemDataRole.UserRole) == oid), None)
+        assert entry is not None
+        window._select_diagnostic(entry)
+        assert window.active_id == oid
+    finally:
+        if window.editor:
+            window.editor.mark_saved()
+        window.close()

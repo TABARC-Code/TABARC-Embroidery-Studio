@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0 — Contour controls and geometry checks
+
+- Select, edit and remove individual contours inside compound fills, preserving undo/redo and schema-3 save/reopen.
+- Edit retained Bézier anchors and handles on reference objects without flattening their curves. Coincident segment endpoints move together; intentional gaps are left alone.
+- Add a design-diagnostics panel and `design-check` CLI command. Report risky source geometry and parameter choices without claiming that a design is machine-ready.
+- Add headless geometry tests, desktop smoke tests and a CLI JSON diagnostic check. Stitch-generation algorithms are unchanged.
+
 ## 0.9.0 — Nodes and compound contours
 
 - Editable vertices on flattened running/tatami shapes, with grid-snapped drag, midpoint insertion and vertex deletion.

@@ -1,4 +1,4 @@
-# Desktop workspace — v0.9.0
+# Desktop workspace — v0.10.0
 
 The desktop is an optional part of TABARC Embroidery Studio. The digitising engine and CLI still work without Qt.
 
@@ -27,10 +27,12 @@ The **Generate preview** button calculates needle movements from the current doc
 
 ## Known limits
 
-- You can draw an open running path with **Edit > Draw running path** (D), clicking its points. **Enter** finishes it; **Escape** cancels the pending path; **Backspace** removes the last point. Switch to **Edit > Edit path nodes** (N) to move vertices with the mouse. Right-click a vertex to insert a midpoint after it or remove the vertex. Use **Edit > Close selected contour** or **Open selected contour** to change a running path. These are flattened vertices, not Bézier handles, and do not edit original cubic reference curves.
+- You can draw an open running path with **Edit > Draw running path** (D), clicking its points. **Enter** finishes it; **Escape** cancels the pending path; **Backspace** removes the last point. Switch to **Edit > Edit path nodes** (N) to move vertices with the mouse. Right-click a vertex to insert a midpoint after it or remove the vertex. Use **Edit > Close selected contour** or **Open selected contour** to change a running path. The **Active contour** selector chooses a specific ring in compound fills; in node mode only that ring shows draggable vertices. **Edit > Remove selected contour** removes that ring, with undo. The last ring cannot be deleted through this command.
+- Reference objects retaining cubic curves now show anchor points and two Bézier controls per segment in node mode. Dragging a shared anchor keeps consecutive segments joined when they originally shared that endpoint. Editing reference curves changes saved reference geometry only; these objects still produce no sewing instructions.
 - Use **Snap to grid** in the right-hand panel (Off, 0.5, 1, 2 or 5 mm). Dragging uses the first geometry point as the snap anchor, not the pointer delta. Running paths convert to tatami only when all contours are closed; unsupported conversions are refused.
+- Press **F6** or use **View > Inspect design warnings** to populate the diagnostics dock. Click an issue to select its object. This flags out-of-hoop flat vertices, short source edges, very narrow contour bounds, short fill-row spacing, wide satin limits and unsupported DST controls. The panel clears on geometry edits, so you must rerun it to inspect the new result. For terminal users, `tabarc-embroidery design-check design.tbes` prints JSON and exits with code 2 for errors.
 - No automatic underlay, pull compensation, colour optimisation, production tie-offs or machine communication.
 - No print-ready or machine-certified status. The editor cannot establish thread/fabric suitability from a screen preview.
 - Desktop smoke tests run offscreen in CI on Linux. Windows/macOS graphical interaction still needs hands-on testing.
 
-Next practical improvements: Bézier handles, contour-specific selection for multi-stroke objects, automatic warnings on small shapes, and improved machine checks.
+Next practical improvements: full object-to-stitch traceability, event-level markers, better handling of difficult imported shapes and supervised machine sew-outs.

@@ -15,6 +15,7 @@ from .editor import EditorSession, as_design, snap_coordinate
 from .dst import export_dst, inspect_dst, read_dst_events
 from .model import Op, Point, StitchSettings
 from .preflight import inspect_plan
+from .diagnostics import inspect_design
 from .project import load_project, save_project
 
 # Imported only by the desktop entry point. Headless conversion has no Qt dependency.
@@ -98,6 +99,29 @@ class NodeHandle(QGraphicsEllipseItem):
             QTimer.singleShot(0, lambda: self._on_delete(oid, contour, vertex))
 
 
+class CurveHandle(QGraphicsEllipseItem):
+    """A cubic anchor or handle. The source curve remains a curve."""
+
+    def __init__(self, oid, path_index, segment_index, point_index, point, on_move):
+        super().__init__(-4, -4, 8, 8)
+        self._ident = (oid, path_index, segment_index, point_index)
+        self._on_move = on_move
+        self.setPos(point.x * PX, point.y * PX)
+        self.setPen(QPen(QColor('#653b7f'), 1.5))
+        self.setBrush(QBrush(QColor('#fff0d1') if point_index in (0, 3) else QColor('#ceb6e8')))
+        self.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setZValue(36)
+        self._original = self.pos()
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if (self.pos() - self._original).manhattanLength() > 0.01:
+            oid, path_index, segment_index, point_index = self._ident
+            x, y = self.pos().x() / PX, self.pos().y() / PX
+            QTimer.singleShot(0, lambda: self._on_move(
+                oid, path_index, segment_index, point_index, x, y))
+
+
 class HoopView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -142,7 +166,10 @@ class StudioWindow(QMainWindow):
         self._plan = None
         self._preview_position = 0
         self._scene_items: dict[str, CanvasItem] = {}
-        self._node_handles: list[NodeHandle] = []
+        self._node_handles: list[NodeHandle | CurveHandle] = []
+        self._curve_guides = []
+        self._active_contour = 0
+        self._contour_owner = None
         self._draw_points: list[Point] = []
         self._draw_hover: Point | None = None
         self._draw_preview = None
@@ -202,6 +229,9 @@ class StudioWindow(QMainWindow):
         form.addRow('Stitch type', self.kind_label)
         form.addRow('Change stitch type', self.kind_combo)
         form.addRow('Snap to grid', self.grid_combo)
+        self.contour_combo = QComboBox()
+        self.contour_combo.currentIndexChanged.connect(self._choose_contour)
+        form.addRow('Active contour', self.contour_combo)
         form.addRow('Thread', self.colour_button)
         form.addRow('', self.visible_box)
         self.fields = {}
@@ -241,6 +271,18 @@ class StudioWindow(QMainWindow):
         bottom.setWidget(controls_widget)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, bottom)
 
+        diagnostics_dock = QDockWidget('Design diagnostics', self)
+        diagnostics_widget = QWidget()
+        diagnostics_layout = QVBoxLayout(diagnostics_widget)
+        self.diagnostics_button = QPushButton('Inspect design')
+        self.diagnostics_button.clicked.connect(self.inspect_objects)
+        self.diagnostics_list = QListWidget()
+        self.diagnostics_list.itemClicked.connect(self._select_diagnostic)
+        diagnostics_layout.addWidget(self.diagnostics_button)
+        diagnostics_layout.addWidget(self.diagnostics_list)
+        diagnostics_dock.setWidget(diagnostics_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, diagnostics_dock)
+
     def _action(self, menu, title, handler, shortcut=None):
         action = QAction(title, self)
         if shortcut:
@@ -272,10 +314,12 @@ class StudioWindow(QMainWindow):
         self.node_action.setCheckable(True)
         self._action(edit, 'Close selected contour', lambda: self._close_selected(True))
         self._action(edit, 'Open selected contour', lambda: self._close_selected(False))
+        self._action(edit, 'Remove selected contour', self._remove_selected_contour)
         self._action(edit, 'Group selected contours as fill', self._group_selected)
         view = self.menuBar().addMenu('&View')
         self._action(view, 'Fit hoop', self._fit, 'Ctrl+0')
         self._action(view, 'Generate stitch preview', self.generate_preview, 'F5')
+        self._action(view, 'Inspect design warnings', self.inspect_objects, 'F6')
 
     def _confirm_discard(self) -> bool:
         if (self.editor and self.editor.dirty) or self._draw_points:
@@ -345,6 +389,8 @@ class StudioWindow(QMainWindow):
         self._draw_preview = None
         self._scene_items = {}
         self._node_handles = []
+        self._curve_guides = []
+        self.diagnostics_list.clear()  # Old warnings describe old geometry.
         self.objects.clear()
         if self.editor:
             doc = self.editor.design
@@ -406,6 +452,9 @@ class StudioWindow(QMainWindow):
         self._update_title()
 
     def _select(self, object_id: str | None):
+        if object_id != self.active_id:
+            self._active_contour = 0
+            self._contour_owner = object_id
         self.active_id = object_id
         for i in range(self.objects.count()):
             item = self.objects.item(i)
@@ -422,7 +471,11 @@ class StudioWindow(QMainWindow):
     def _selection_from_list(self, current, previous):
         if self._refreshing:
             return
-        self.active_id = current.data(Qt.ItemDataRole.UserRole) if current else None
+        new_id = current.data(Qt.ItemDataRole.UserRole) if current else None
+        if new_id != self.active_id:
+            self._active_contour = 0
+            self._contour_owner = new_id
+        self.active_id = new_id
         self._refreshing = True
         for oid, graphics in self._scene_items.items():
             graphics.setSelected(oid == self.active_id)
@@ -443,6 +496,19 @@ class StudioWindow(QMainWindow):
     def _refresh_properties(self):
         self._refreshing = True
         obj = self.editor.object(self.active_id) if self.editor and self.active_id else None
+        if self._contour_owner != self.active_id:
+            self._active_contour = 0
+            self._contour_owner = self.active_id
+        contours = len(obj.strokes) if obj and obj.kind in {'running', 'tatami'} else 0
+        self.contour_combo.blockSignals(True)
+        self.contour_combo.clear()
+        for i in range(contours):
+            self.contour_combo.addItem(f'Contour {i + 1}', i)
+        self._active_contour = min(self._active_contour, max(0, contours - 1))
+        if contours:
+            self.contour_combo.setCurrentIndex(self._active_contour)
+        self.contour_combo.setEnabled(contours > 1)
+        self.contour_combo.blockSignals(False)
         self.name_edit.setText(obj.name if obj else '')
         self.kind_label.setText(obj.kind if obj else '—')
         self.kind_combo.setEnabled(bool(obj and obj.kind in {'running', 'tatami'}))
@@ -482,22 +548,78 @@ class StudioWindow(QMainWindow):
             QMessageBox.warning(self, 'Cannot change stitch type', str(exc))
             self._refresh_properties()
 
+    def _choose_contour(self, index):
+        if self._refreshing or index < 0:
+            return
+        self._active_contour = index
+        self._redraw_nodes()
+
     def _redraw_nodes(self):
         for handle in self._node_handles:
             self.scene.removeItem(handle)
+        for guide in self._curve_guides:
+            self.scene.removeItem(guide)
         self._node_handles.clear()
+        self._curve_guides.clear()
         if not (self.editor and self.active_id and self.node_action.isChecked()):
             return
         obj = self.editor.object(self.active_id)
-        if obj.kind not in {'running', 'tatami'} or obj.curve_paths:
-            self.statusBar().showMessage('This object has no editable flat vertices')
-            return
-        for contour, stroke in enumerate(obj.strokes):
+        if obj.kind in {'running', 'tatami'} and not obj.curve_paths:
+            if self._active_contour >= len(obj.strokes):
+                self._active_contour = 0
+            stroke = obj.strokes[self._active_contour]
             for vertex, point in enumerate(stroke.points):
-                handle = NodeHandle(obj.object_id, contour, vertex, point,
+                handle = NodeHandle(obj.object_id, self._active_contour, vertex, point,
                                     self._move_node, self._insert_node, self._delete_node)
                 self.scene.addItem(handle)
                 self._node_handles.append(handle)
+        elif obj.kind == 'reference' and obj.curve_paths:
+            # Display the original control polygon; the curve itself is never
+            # replaced by a rough polyline merely to make editing easier.
+            for path_index, path in enumerate(obj.curve_paths):
+                for segment_index, seg in enumerate(path.segments):
+                    for a, b in ((seg.p0, seg.p1), (seg.p2, seg.p3)):
+                        guide = self.scene.addLine(a.x * PX, a.y * PX, b.x * PX, b.y * PX,
+                            QPen(QColor('#9b7cae'), 1, Qt.PenStyle.DashLine))
+                        guide.setZValue(34)
+                        self._curve_guides.append(guide)
+                    for index, point in enumerate((seg.p0, seg.p1, seg.p2, seg.p3)):
+                        if index == 0 and segment_index > 0 and path.segments[segment_index - 1].p3 == point:
+                            continue  # one handle for a shared vertex
+                        handle = CurveHandle(obj.object_id, path_index, segment_index,
+                                             index, point, self._move_curve_point)
+                        self.scene.addItem(handle)
+                        self._node_handles.append(handle)
+        else:
+            self.statusBar().showMessage('This object has no editable nodes')
+
+    def _move_curve_point(self, oid, path_index, segment_index, point_index, x, y):
+        self.active_id = oid
+        self._node_change('edit_curve_point', oid, path_index, segment_index,
+                          point_index, Point(x, y), grid_mm=self._grid())
+
+    def _remove_selected_contour(self):
+        if self.editor and self.active_id:
+            self._node_change('remove_contour', self.active_id, self._active_contour)
+
+    def inspect_objects(self):
+        self.diagnostics_list.clear()
+        if not self.editor:
+            return
+        issues = inspect_design(self.editor.design)
+        for issue in issues:
+            entry = QListWidgetItem(f'{issue.severity} · {issue.object_id} · '
+                                    f'{issue.code}: {issue.message}')
+            entry.setData(Qt.ItemDataRole.UserRole, issue.object_id)
+            self.diagnostics_list.addItem(entry)
+        self.statusBar().showMessage(f'{len(issues)} design observations; '
+                                     'check actual stitches before sewing')
+
+    def _select_diagnostic(self, item):
+        oid = item.data(Qt.ItemDataRole.UserRole)
+        if self.editor and oid in {o.object_id for o in self.editor.design.objects}:
+            self._select(oid)
+            self._refresh_properties()
 
     def _set_node_mode(self, checked):
         if checked and self.draw_action.isChecked():
@@ -535,7 +657,7 @@ class StudioWindow(QMainWindow):
 
     def _close_selected(self, closed):
         if self.editor and self.active_id:
-            self._node_change('close_contour', self.active_id, closed=closed)
+            self._node_change('close_contour', self.active_id, self._active_contour, closed=closed)
 
     def _group_selected(self):
         if not self.editor:
@@ -705,7 +827,7 @@ class StudioWindow(QMainWindow):
     def _update_title(self):
         name = self.project_path.name if self.project_path else 'Untitled'
         marker = ' *' if self.editor and self.editor.dirty else ''
-        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.9.0')
+        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.10.0')
 
     def save(self):
         if not self.editor:

@@ -1,4 +1,4 @@
-"""Headless phase-one conversion tool; Qt editor arrives in a later phase."""
+"""Headless design conversion, inspection and preflight."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,7 @@ import tempfile
 from . import __version__
 from .dst import export_dst, inspect_dst, read_dst_events
 from .preflight import inspect_plan
+from .diagnostics import inspect_design
 from .preview import preview_svg
 from .project import load_project, save_project
 from .digitise import generate_plan
@@ -83,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     promote.add_argument("output", type=Path)
     design_inspect = commands.add_parser("design-inspect", help="List objects, settings and source metadata in .tbes")
     design_inspect.add_argument("source", type=Path)
+    check = commands.add_parser('design-check', help='Inspect object geometry and settings; no machine certification')
+    check.add_argument('source', type=Path, help='Editable .tbes project')
     commands.add_parser("formats", help="List output formats and optional dependency status")
     inspect = commands.add_parser("inspect", help="Inspect basic DST structure and bounds")
     inspect.add_argument("source", type=Path)
@@ -132,6 +135,18 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({'output': str(args.output), 'promoted': args.object_id,
                               'warning': 'Experimental Running approximation; not exact native stitches'}))
             return 0
+        if args.command == 'design-check':
+            if args.source.suffix.lower() != '.tbes':
+                raise ValueError('design-check expects a .tbes project')
+            from .editor import as_design
+            document, _ = load_project(args.source.read_bytes())
+            findings = inspect_design(as_design(document))
+            print(json.dumps({'issues': [i.__dict__ for i in findings],
+                              'errors': sum(i.severity == 'ERROR' for i in findings),
+                              'warnings': sum(i.severity == 'WARNING' for i in findings),
+                              'note': 'Heuristic geometry checks; not a sew-out or machine validation'},
+                             indent=2))
+            return 2 if any(i.severity == 'ERROR' for i in findings) else 0
         if args.command == 'design-inspect':
             if args.source.suffix.lower() != '.tbes':
                 raise ValueError('design-inspect expects a .tbes project')

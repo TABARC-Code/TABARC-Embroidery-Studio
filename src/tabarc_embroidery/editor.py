@@ -294,6 +294,58 @@ class EditorSession:
         self._apply(replace(self.design, objects=tuple(remainder)))
         return ident
 
+    def remove_contour(self, object_id: str, contour_index: int) -> None:
+        """Remove one ring from a multi-contour fill in a single undo step."""
+        obj = self.object(object_id)
+        if obj.kind != 'tatami' or obj.curve_paths or len(obj.strokes) < 2:
+            raise ValueError('Only multi-contour flattened fills can lose a contour')
+        if type(contour_index) is not int or not 0 <= contour_index < len(obj.strokes):
+            raise ValueError('Invalid contour index')
+        strokes = obj.strokes[:contour_index] + obj.strokes[contour_index + 1:]
+        from .tatami import validate_contours
+        validate_contours(tuple(s.points for s in strokes))
+        self._replace(object_id, replace(obj, strokes=strokes))
+
+    def edit_curve_point(self, object_id: str, path_index: int, segment_index: int,
+                         point_index: int, point: Point,
+                         *, grid_mm: float | None = None) -> None:
+        """Move a retained cubic anchor or handle without flattening the source.
+
+        Shared anchors move together if the old positions match. A gap between
+        segments is intentional; joining it behind the user's back would be daft.
+        """
+        obj = self.object(object_id)
+        if obj.kind != 'reference' or not obj.curve_paths:
+            raise ValueError('Only reference cubic curves support control-point editing')
+        if type(path_index) is not int or not 0 <= path_index < len(obj.curve_paths):
+            raise ValueError('Invalid curve path index')
+        path = obj.curve_paths[path_index]
+        if type(segment_index) is not int or not 0 <= segment_index < len(path.segments):
+            raise ValueError('Invalid cubic segment index')
+        if type(point_index) is not int or not 0 <= point_index <= 3:
+            raise ValueError('Cubic point index must be 0–3')
+        if not isinstance(point, Point) or abs(point.x) > 10000 or abs(point.y) > 10000:
+            raise ValueError('Cubic control point is outside supported coordinates')
+        if grid_mm is not None:
+            point = Point(snap_coordinate(point.x, grid_mm),
+                          snap_coordinate(point.y, grid_mm))
+        old_segments = path.segments
+        old_point = getattr(old_segments[segment_index], f'p{point_index}')
+        segments = list(old_segments)
+        segments[segment_index] = replace(segments[segment_index], **{f'p{point_index}': point})
+        # Only synchronise coincident endpoints. Handle directions are independent.
+        if point_index in (0, 3):
+            neighbour = ((segment_index - 1) % len(segments) if point_index == 0
+                         else (segment_index + 1) % len(segments))
+            neighbour_attr = 'p3' if point_index == 0 else 'p0'
+            wraps = (point_index == 0 and segment_index == 0 or
+                     point_index == 3 and segment_index == len(segments) - 1)
+            if (not wraps or path.closed) and getattr(old_segments[neighbour], neighbour_attr) == old_point:
+                segments[neighbour] = replace(segments[neighbour], **{neighbour_attr: point})
+        curves = list(obj.curve_paths)
+        curves[path_index] = replace(path, segments=tuple(segments))
+        self._replace(object_id, replace(obj, curve_paths=tuple(curves)))
+
     def set_stitch_kind(self, object_id: str, kind: str) -> None:
         """Only safe conversions: an open line cannot silently become a filled polygon."""
         obj = self.object(object_id)

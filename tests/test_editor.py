@@ -305,3 +305,72 @@ def test_compound_rejects_different_colours_intersections_and_open_contours():
     with pytest.raises(ValueError, match='closed'):
         editor.group_fill_contours((a, b))
     assert editor.design == before
+
+
+def test_compound_fill_remove_individual_contour_and_undo():
+    editor = session()
+    outer = editor.add_running_path((Point(20, 20), Point(70, 20),
+                                      Point(70, 70), Point(20, 70)))
+    inner = editor.add_running_path((Point(30, 30), Point(60, 30),
+                                      Point(60, 60), Point(30, 60)))
+    editor.close_contour(outer)
+    editor.close_contour(inner)
+    ident = editor.group_fill_contours((outer, inner))
+    original = editor.object(ident)
+    editor.remove_contour(ident, 1)
+    assert editor.object(ident).strokes == (original.strokes[0],)
+    restored, _ = load_project(save_project(editor.design, editor.source))
+    assert next(o for o in restored.objects if o.object_id == ident).strokes == (original.strokes[0],)
+    assert editor.undo() and editor.object(ident) == original
+    assert editor.redo() and len(editor.object(ident).strokes) == 1
+    checkpoint = editor.design
+    for index in (-1, 1, True):
+        with pytest.raises(ValueError):
+            editor.remove_contour(ident, index)
+    assert editor.design == checkpoint
+
+
+def test_reference_curve_controls_keep_cubic_geometry_and_source_bytes():
+    editor = session('synthetic-native-adapted.tbes')
+    oid = next(o.object_id for o in editor.design.objects if o.curve_paths)
+    original = editor.object(oid)
+    assert original.kind == 'reference'
+    base = original.curve_paths[0].segments[0]
+    editor.edit_curve_point(oid, 0, 0, 1, Point(base.p1.x + 2.1, base.p1.y - 3.6), grid_mm=1)
+    moved = editor.object(oid).curve_paths[0].segments[0]
+    assert moved.p1 == Point(round(base.p1.x + 2.1), round(base.p1.y - 3.6))
+    assert moved.p0 == base.p0 and moved.p2 == base.p2 and moved.p3 == base.p3
+    assert editor.object(oid).strokes == original.strokes
+    blob = save_project(editor.design, editor.source)
+    reopened, source = load_project(blob)
+    assert source == editor.source
+    assert next(o for o in reopened.objects if o.object_id == oid).curve_paths[0].segments[0].p1 == moved.p1
+    assert editor.undo() and editor.object(oid) == original
+    assert editor.redo() and editor.object(oid).curve_paths[0].segments[0].p1 == moved.p1
+
+
+def test_shared_cubic_endpoints_remain_connected_and_invalid_edits_fail():
+    from hashlib import sha256
+    from tabarc_embroidery.design import DesignDocument, EmbroideryObject, CurvePath, CubicSegment
+    source = b'original source'
+    a = CubicSegment(Point(0, 0), Point(1, 0), Point(2, 0), Point(3, 0))
+    b = CubicSegment(Point(3, 0), Point(4, 0), Point(5, 0), Point(6, 0))
+    ref = EmbroideryObject('ref', 'Curve', 'reference', curve_paths=(CurvePath((a, b)),))
+    editor = EditorSession(DesignDocument(100, 100, (ref,), sha256(source).hexdigest()), source)
+    editor.edit_curve_point('ref', 0, 0, 3, Point(3, 2))
+    s0, s1 = editor.object('ref').curve_paths[0].segments
+    assert s0.p3 == s1.p0 == Point(3, 2)
+    before = editor.design
+    for args in ((0, 4, 1, Point(0, 0)), (0, 0, -1, Point(0, 0)),
+                 (0, 0, 0, Point(10001, 0))):
+        with pytest.raises(ValueError):
+            editor.edit_curve_point('ref', *args)
+    assert editor.design == before
+    assert editor.undo() and editor.object('ref') == ref
+    # Discontinuous segments must stay discontinuous.
+    a2 = CubicSegment(Point(0, 0), Point(1, 0), Point(2, 0), Point(3, 0))
+    b2 = CubicSegment(Point(5, 0), Point(6, 0), Point(7, 0), Point(8, 0))
+    disjoint = replace(ref, curve_paths=(CurvePath((a2, b2)),))
+    other = EditorSession(replace(editor.design, objects=(disjoint,)), source)
+    other.edit_curve_point('ref', 0, 0, 3, Point(3, 3))
+    assert other.object('ref').curve_paths[0].segments[1].p0 == Point(5, 0)

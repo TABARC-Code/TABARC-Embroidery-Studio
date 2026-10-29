@@ -41,9 +41,16 @@ Add explicit object creation and SVG assignment, snapping and handles, object-le
 - Save and reopen edits in the existing schema-3 project without changing the original artwork.
 - Add model-level regression tests and Qt offscreen coverage.
 
-## v0.10.0 — next
+## v0.10.0 — geometry tools and diagnostics (implemented)
 
-- Add contour-specific selection and editing within compound fills.
-- Show object-level problems directly in the editor and stitch preview.
-- Improve Bézier path editing without losing original control-point data.
-- Increase independent machine-format testing and log supervised sew-outs.
+- Select a contour inside a compound fill; edit its vertices or remove the contour with undo/redo.
+- Edit original cubic anchors and control points on reference objects without flattening or inventing stitches. Shared endpoints move together when originally coincident.
+- Add object-level diagnostic messages for geometry outside the hoop, tiny source edges, narrow fill bounds and suspect settings. Surface them in a dock and via `design-check` JSON output.
+- Preserve schema-3 project compatibility and the CLI pipeline. Desktop interaction tests belong in the Qt CI job.
+
+## v0.11.0 — after verification
+
+- Report generated needle events against their source object, including jumps between objects and colour changes.
+- Extend live simulation with warnings tied to actual stitch positions.
+- Improve automated tests for compound fills and saved cubic reference artwork.
+- Record supervised machine sew-outs before recommending production settings. An SVG preview isn't proof of anything stitched.
