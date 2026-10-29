@@ -71,7 +71,7 @@ third-party embroidery software is a useful feature benchmark, **not** an availa
 - Optional plugin API, command-line batch mode and automation integrations.
 
 ### Explicitly not in MVP
-- Generative AI or fully automatic production-grade digitisation.
+- Unattended, production-grade digitisation without an editable review stage.
 - A physically accurate simulation of fabric deformation.
 - Direct USB/network hardware control (requires separate research and safety testing).
 - Unverified claims of universal machine compatibility.
@@ -226,7 +226,7 @@ Use drawing-app conventions where sensible; retain conventional keyboard shortcu
 | SVG scaling inconsistencies | High | mm unit tests; viewport/viewBox/transforms cases |
 | Dependency licences conflict with distribution | High | pinned dependency audit before release; no GPL code copying |
 | Slow redraw with large stitch counts | Medium | batched drawing and caches; profile before native acceleration |
-| AI digitisation introduces weak designs | Medium | postpone; editable candidates and diagnostics rather than promises |
+| Unreliable automatic digitisation produces weak designs | Medium | I'll keep candidates editable and flag suspect geometry before promising unattended output |
 | Feature creep delays useful release | High | lock S1 to one-run-to-DST vertical slice |
 
 ## 12. Product decisions to settle later
