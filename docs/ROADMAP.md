@@ -48,9 +48,16 @@ Add explicit object creation and SVG assignment, snapping and handles, object-le
 - Add object-level diagnostic messages for geometry outside the hoop, tiny source edges, narrow fill bounds and suspect settings. Surface them in a dock and via `design-check` JSON output.
 - Preserve schema-3 project compatibility and the CLI pipeline. Desktop interaction tests belong in the Qt CI job.
 
-## v0.11.0 — after verification
+## v0.11.0 — stitch attribution (implemented)
 
-- Report generated needle events against their source object, including jumps between objects and colour changes.
-- Extend live simulation with warnings tied to actual stitch positions.
-- Improve automated tests for compound fills and saved cubic reference artwork.
-- Record supervised machine sew-outs before recommending production settings. An SVG preview isn't proof of anything stitched.
+- Record a source object ID for every generated needle event. New-object approach jumps and automatic colour changes belong to the arriving object; END has no owner.
+- Expose a bounded JSON `design-trace` command with preserved global event indices and optional per-object filtering.
+- Show the current event owner in desktop playback and seek to the event that triggered a needle-level diagnostic. Clear stale traces after any edit.
+- Check quantised hoop destinations and unusually short or long consecutive needle-down steps. Findings are advisory, capped and never a statement about fabric quality.
+- Add attribution, save/reopen, CLI and Qt regression cases. See [stitch trace](STITCH-TRACE.md).
+
+## v0.12.0 — next
+
+- Make jump/trim/colour markers easier to inspect, especially on large designs.
+- Expand machine-independent routing diagnostics and guard against erroneous continuity around holes.
+- Add supervised physical sew-outs and attach recorded outcomes to a regression corpus before tuning underlay, tie-offs or pull compensation.

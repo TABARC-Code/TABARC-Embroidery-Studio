@@ -194,3 +194,46 @@ def test_desktop_curve_control_and_warning_selection():
         if window.editor:
             window.editor.mark_saved()
         window.close()
+
+
+def test_playback_owners_and_diagnostic_seek():
+    from PySide6.QtWidgets import QListWidgetItem
+    app = QApplication.instance() or QApplication([])
+    window = StudioWindow(EXAMPLE)
+    try:
+        window.generate_preview()
+        trace = window._trace
+        assert trace is not None
+        oid = 'red-line'
+        index = next(i for i, owner in enumerate(trace.object_ids)
+                     if owner == oid and trace.plan.events[i].opcode.value == 'STITCH')
+        window.timeline.setValue(index)
+        assert window.editor.object(oid).name.lower() in window.position_label.text().lower()
+        entry = QListWidgetItem('Needle check')
+        entry.setData(Qt.ItemDataRole.UserRole, oid)
+        entry.setData(Qt.ItemDataRole.UserRole + 1, index)
+        window._select_diagnostic(entry)
+        assert window.active_id == oid
+        assert window.timeline.value() == index
+        window._move_object(oid, 1, 0)
+        assert window._trace is None
+        assert window._plan is None
+    finally:
+        if window.editor:
+            window.editor.mark_saved()
+        window.close()
+
+
+def test_inspect_design_populates_trace_without_modifying_geometry():
+    app = QApplication.instance() or QApplication([])
+    window = StudioWindow(EXAMPLE)
+    try:
+        original = window.editor.design
+        window.inspect_objects()
+        assert window._trace is not None
+        assert window.editor.design == original
+        assert window._plan is not None
+    finally:
+        if window.editor:
+            window.editor.mark_saved()
+        window.close()

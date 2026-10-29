@@ -10,12 +10,12 @@ from pathlib import Path
 import os
 import tempfile
 
-from .design import DesignDocument, design_from_svg, generate_design_plan
+from .design import DesignDocument, design_from_svg, generate_design_plan, generate_design_trace
 from .editor import EditorSession, as_design, snap_coordinate
 from .dst import export_dst, inspect_dst, read_dst_events
 from .model import Op, Point, StitchSettings
 from .preflight import inspect_plan
-from .diagnostics import inspect_design
+from .diagnostics import inspect_design, inspect_needle_trace
 from .project import load_project, save_project
 
 # Imported only by the desktop entry point. Headless conversion has no Qt dependency.
@@ -164,6 +164,7 @@ class StudioWindow(QMainWindow):
         self.active_id: str | None = None
         self._refreshing = False
         self._plan = None
+        self._trace = None
         self._preview_position = 0
         self._scene_items: dict[str, CanvasItem] = {}
         self._node_handles: list[NodeHandle | CurveHandle] = []
@@ -382,6 +383,7 @@ class StudioWindow(QMainWindow):
         self._timer.stop()
         self.play_button.setText('Play')
         self._plan = None
+        self._trace = None
         self.timeline.setRange(0, 0)
         self.position_label.setText('No stitch plan')
         self._refreshing = True
@@ -612,14 +614,34 @@ class StudioWindow(QMainWindow):
                                     f'{issue.code}: {issue.message}')
             entry.setData(Qt.ItemDataRole.UserRole, issue.object_id)
             self.diagnostics_list.addItem(entry)
-        self.statusBar().showMessage(f'{len(issues)} design observations; '
-                                     'check actual stitches before sewing')
+        # Reference-only projects have no stitch plan. Don't pop up a misleading
+        # error just to inspect their geometry.
+        sewable = any(o.visible and o.kind in {'running', 'satin', 'tatami'}
+                      for o in self.editor.design.objects)
+        if self._trace is None and sewable:
+            self.generate_preview()
+        needle_issues = (inspect_needle_trace(self._trace,
+                          self.editor.design.width_mm, self.editor.design.height_mm)
+                         if self._trace is not None else [])
+        for issue in needle_issues:
+            entry = QListWidgetItem(
+                f'{issue.severity} · {issue.object_id} · event {issue.event_index + 1} · '
+                f'{issue.code} at ({issue.x_mm:g}, {issue.y_mm:g}) mm: {issue.message}')
+            entry.setData(Qt.ItemDataRole.UserRole, issue.object_id)
+            entry.setData(Qt.ItemDataRole.UserRole + 1, issue.event_index)
+            self.diagnostics_list.addItem(entry)
+        self.statusBar().showMessage(f'{len(issues)} geometry and {len(needle_issues)} '
+                                     'needle observations; check actual stitches before sewing')
 
     def _select_diagnostic(self, item):
         oid = item.data(Qt.ItemDataRole.UserRole)
         if self.editor and oid in {o.object_id for o in self.editor.design.objects}:
             self._select(oid)
             self._refresh_properties()
+            event_index = item.data(Qt.ItemDataRole.UserRole + 1)
+            if event_index is not None and self._trace is not None:
+                self.timeline.setValue(event_index)
+                self._seek(event_index)  # also update label if slider is already there
 
     def _set_node_mode(self, checked):
         if checked and self.draw_action.isChecked():
@@ -827,7 +849,7 @@ class StudioWindow(QMainWindow):
     def _update_title(self):
         name = self.project_path.name if self.project_path else 'Untitled'
         marker = ' *' if self.editor and self.editor.dirty else ''
-        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.10.0')
+        self.setWindowTitle(f'{name}{marker} — TABARC Embroidery Studio 0.11.0')
 
     def save(self):
         if not self.editor:
@@ -885,9 +907,13 @@ class StudioWindow(QMainWindow):
         self._timer.stop()
         self.play_button.setText('Play')
         try:
-            self._plan = self._generate_plan()
+            if not self.editor:
+                raise ValueError('Open a design first')
+            self._trace = generate_design_trace(self.editor.design)
+            self._plan = self._trace.plan
         except ValueError as exc:
             QMessageBox.warning(self, 'Cannot generate stitches', str(exc))
+            self._trace = None
             self._plan = None
             return
         self.timeline.setRange(0, len(self._plan.events) - 1)
@@ -932,7 +958,15 @@ class StudioWindow(QMainWindow):
                                         QPen(QColor('#151515')), QBrush(QColor('#f5dd62')))
             dot.setZValue(25)
             dot.setData(0, 'stitch-preview')
-        self.position_label.setText(f'{position + 1:,}/{len(events):,} events' +
+        event = events[position]
+        owner_id = self._trace.owner_at(position) if self._trace else None
+        source = owner_id or 'end of design'
+        if owner_id and self.editor:
+            matched = next((o for o in self.editor.design.objects if o.object_id == owner_id), None)
+            if matched:
+                source = matched.name
+        self.position_label.setText(f'{position + 1:,}/{len(events):,} · '
+                                    f'{event.opcode.value.lower()} · {source}' +
                                     (' · windowed view' if start else ''))
 
     def _toggle_play(self):

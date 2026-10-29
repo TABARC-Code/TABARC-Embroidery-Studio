@@ -179,15 +179,40 @@ def _jump_from(cursor: tuple[int, int], goal: tuple[int, int]) -> list[Event]:
                   cursor[1] + round(dy * i / steps)) for i in range(1, steps + 1)]
 
 
-def generate_design_plan(design: DesignDocument) -> StitchPlan:
-    """Compose per-object needle events with explicit stitch/jump/control semantics."""
+@dataclass(frozen=True)
+class DesignTrace:
+    """An exact owner for every generated event, without changing machine data.
+
+    END has no owner. Travel to the next object and the automatic colour
+    change belong to the arriving object. Explicit controls own their events.
+    """
+
+    plan: StitchPlan
+    object_ids: tuple[str | None, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.object_ids) != len(self.plan.events):
+            raise ValueError('Trace and needle events differ in length')
+        if self.object_ids[-1] is not None:
+            raise ValueError('END must have no source object')
+
+    def owner_at(self, event_index: int) -> str | None:
+        return self.object_ids[event_index]
+
+
+def generate_design_trace(design: DesignDocument) -> DesignTrace:
+    """Compose a needle plan plus source attribution for each event.
+
+    This is the same plan used by the exporters; no second stitch generator.
+    """
     events: list[Event] = []
+    owners: list[str | None] = []
     palette: list[str] = []
     cursor = (0, 0)
     current_colour: str | None = None
     stitched = False
 
-    def add(event: Event) -> None:
+    def add(event: Event, owner: str | None) -> None:
         nonlocal cursor
         if len(events) >= MAX_EVENTS:
             raise ValueError('Combined design event limit exceeded')
@@ -196,6 +221,7 @@ def generate_design_plan(design: DesignDocument) -> StitchPlan:
         if event.opcode in {Op.COLOUR_CHANGE, Op.STOP, Op.TRIM} and (event.x10, event.y10) != cursor:
             raise ValueError('Control operation must not move needle')
         events.append(event)
+        owners.append(owner)
         cursor = event.x10, event.y10
 
     for obj in design.objects:
@@ -205,13 +231,13 @@ def generate_design_plan(design: DesignDocument) -> StitchPlan:
             if not stitched:
                 raise ValueError(f'Control {obj.kind} requires preceding stitches')
             if obj.kind == 'colour_change':
-                add(Event(Op.COLOUR_CHANGE, *cursor))
+                add(Event(Op.COLOUR_CHANGE, *cursor), obj.object_id)
                 current_colour = validate_thread(obj.thread_hex)
                 palette.append(current_colour)
             elif obj.kind == 'trim':
-                add(Event(Op.TRIM, *cursor))
+                add(Event(Op.TRIM, *cursor), obj.object_id)
             else:
-                add(Event(Op.STOP, *cursor))
+                add(Event(Op.STOP, *cursor), obj.object_id)
             continue
         subdoc = Document(design.width_mm, design.height_mm, obj.strokes,
                           design.source_sha256, obj.settings)
@@ -229,18 +255,25 @@ def generate_design_plan(design: DesignDocument) -> StitchPlan:
             current_colour = validate_thread(obj.thread_hex)
             palette.append(current_colour)
         elif current_colour != validate_thread(obj.thread_hex):
-            add(Event(Op.COLOUR_CHANGE, *cursor))
+            add(Event(Op.COLOUR_CHANGE, *cursor), obj.object_id)
             current_colour = validate_thread(obj.thread_hex)
             palette.append(current_colour)
         for jump in _jump_from(cursor, anchor):
-            add(jump)
+            add(jump, obj.object_id)
         for ev in part.events[first_sew:-1]:
-            add(ev)
+            add(ev, obj.object_id)
         stitched = True
     if not stitched:
         raise ValueError('Design contains no stitchable visible objects')
-    add(Event(Op.END, *cursor))
-    return StitchPlan(tuple(events), design.source_sha256, 'multi-object-v1', tuple(palette))
+    add(Event(Op.END, *cursor), None)
+    plan = StitchPlan(tuple(events), design.source_sha256,
+                      'multi-object-v1', tuple(palette))
+    return DesignTrace(plan, tuple(owners))
+
+
+def generate_design_plan(design: DesignDocument) -> StitchPlan:
+    """Keep existing callers and machine output unchanged."""
+    return generate_design_trace(design).plan
 
 
 def promote_reference_running(design: DesignDocument, object_id: str, *,

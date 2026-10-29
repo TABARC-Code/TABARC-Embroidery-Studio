@@ -1,6 +1,6 @@
 # TABARC Embroidery Studio
 
-**Version 0.10.0 · pre-alpha · Windows, macOS and Linux**
+**Version 0.11.0 · pre-alpha · Windows, macOS and Linux**
 
 An embroidery editor in its early days. The desktop window now handles projects and stitch playback; the proven geometry engine still works behind a command line: I can import a limited set of SVG geometry, lay down running stitches, build a satin column from a pair of rails, fill closed areas with tatami stitches and put differently coloured objects together in a single design.
 
@@ -29,13 +29,21 @@ tabarc-studio examples/multi-object.tbes
 
 There is also `tabarc-embroidery studio examples/multi-object.tbes`. The canvas shows the hoop and its objects; the side panels handle order, visibility, thread colours and stitch settings. You can draw running paths, move or insert vertices, close/open contours, group closed paths into a compound tatami fill and select or remove individual rings. Bézier handles are editable on non-sewing reference objects; they do not magically convert into usable stitch columns. Grid snapping, undo/redo, stitch playback and DST export remain available. These are editing tools, not substitutes for a test sew-out.
 
-Use **View > Inspect design warnings** (F6) to review object-level geometry warnings and select the affected object. The same checks are available without Qt:
+Use **View > Inspect design warnings** (F6) to review object-level geometry warnings and generated needle observations. Select a needle finding to jump to the exact event in the playback slider. Each event has an attributed object ID, including travel into the next object and automatic thread changes. END has no owner. These are generated positions, not measurements from fabric. The same geometry checks are available without Qt:
 
 ```sh
 tabarc-embroidery design-check examples/multi-object.tbes
 ```
 
-The report distinguishes errors, warnings and non-sewing references. It cannot judge fabric, stabiliser or thread suitability and does not replace the needle-event preflight at export.
+The report distinguishes errors, warnings and non-sewing references. To inspect the actual generated sequence with object IDs, run:
+
+```sh
+tabarc-embroidery design-trace examples/multi-object.tbes --limit 20
+# Events for one object, retaining global zero-based event indices:
+tabarc-embroidery design-trace examples/multi-object.tbes --object-id red-line --limit 20
+```
+
+`design-trace` includes bounded stitch-position findings (minimum 0.3 mm, maximum 8 mm between successive needle-down events, and destinations outside the hoop). It cannot judge fabric, stabiliser or thread suitability and does not replace the needle-event preflight at export.
 
 See [desktop instructions](docs/DESKTOP-WORKFLOW.md) for the actual workflow and restrictions.
 

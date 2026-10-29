@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — Needle event attribution
+
+- Tie every generated stitch, approach jump and colour-change event to its source object without modifying the underlying machine output. END remains unowned.
+- Add bounded generated-needle warnings for hoop exits and suspect stitch lengths, with exact event indices and positions.
+- Show the source object in desktop stitch playback; selecting a needle finding seeks to that movement. Geometry edits invalidate the old trace.
+- Add `design-trace` JSON inspection, filtering by object and event index without renumbering the sequence.
+- Add saved-project, control-command, trace and CLI regression tests. Qt smoke tests remain in the desktop CI job.
+- Still pre-alpha. No physical machine or fabric validation.
+
 ## 0.10.0 — Contour controls and geometry checks
 
 - Select, edit and remove individual contours inside compound fills, preserving undo/redo and schema-3 save/reopen.

@@ -13,12 +13,12 @@ import tempfile
 from . import __version__
 from .dst import export_dst, inspect_dst, read_dst_events
 from .preflight import inspect_plan
-from .diagnostics import inspect_design
+from .diagnostics import inspect_design, inspect_needle_trace
 from .preview import preview_svg
 from .project import load_project, save_project
 from .digitise import generate_plan
 from .design import (DesignDocument, design_from_svg, design_from_native,
-                     generate_design_plan, promote_reference_running)
+                     generate_design_plan, generate_design_trace, promote_reference_running)
 from .svg_import import import_svg
 from .native_project import load_native_project, inspect_native, native_geometry_svg
 from .format_bridge import (EXTERNAL_FORMATS, SUPPORTED_FORMATS, export_with_pyembroidery,
@@ -86,6 +86,11 @@ def main(argv: list[str] | None = None) -> int:
     design_inspect.add_argument("source", type=Path)
     check = commands.add_parser('design-check', help='Inspect object geometry and settings; no machine certification')
     check.add_argument('source', type=Path, help='Editable .tbes project')
+    trace_cmd = commands.add_parser('design-trace', help='Inspect source IDs for real needle events')
+    trace_cmd.add_argument('source', type=Path, help='Multi-object .tbes project')
+    trace_cmd.add_argument('--start', type=int, default=0, help='First zero-based event index')
+    trace_cmd.add_argument('--limit', type=int, default=100, help='Maximum reported events (1–1000)')
+    trace_cmd.add_argument('--object-id', help='Show only one source object, retaining event indices')
     commands.add_parser("formats", help="List output formats and optional dependency status")
     inspect = commands.add_parser("inspect", help="Inspect basic DST structure and bounds")
     inspect.add_argument("source", type=Path)
@@ -147,6 +152,33 @@ def main(argv: list[str] | None = None) -> int:
                               'note': 'Heuristic geometry checks; not a sew-out or machine validation'},
                              indent=2))
             return 2 if any(i.severity == 'ERROR' for i in findings) else 0
+        if args.command == 'design-trace':
+            if args.source.suffix.lower() != '.tbes':
+                raise ValueError('design-trace expects a .tbes project')
+            if args.start < 0 or not 1 <= args.limit <= 1000:
+                raise ValueError('Start must be non-negative and limit must be 1–1000')
+            document, _ = load_project(args.source.read_bytes())
+            if not isinstance(document, DesignDocument):
+                raise ValueError('design-trace requires a multi-object project')
+            if args.object_id and args.object_id not in {o.object_id for o in document.objects}:
+                raise ValueError('Unknown object ID')
+            trace = generate_design_trace(document)
+            needle_issues = inspect_needle_trace(trace, document.width_mm, document.height_mm)
+            events = []
+            for i in range(args.start, len(trace.plan.events)):
+                owner = trace.owner_at(i)
+                if args.object_id and owner != args.object_id:
+                    continue
+                event = trace.plan.events[i]
+                events.append({'index': i, 'object_id': owner, 'command': event.opcode.value,
+                               'x_mm': event.x10 / 10, 'y_mm': event.y10 / 10})
+                if len(events) >= args.limit:
+                    break
+            print(json.dumps({'total_events': len(trace.plan.events), 'events': events,
+                              'findings': [f.__dict__ for f in needle_issues],
+                              'note': 'Locations are generated needle coordinates, not sew-out results'},
+                             indent=2))
+            return 0
         if args.command == 'design-inspect':
             if args.source.suffix.lower() != '.tbes':
                 raise ValueError('design-inspect expects a .tbes project')
